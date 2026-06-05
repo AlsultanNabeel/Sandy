@@ -1,0 +1,7 @@
+build/
+sdkconfig
+sdkconfig.old
+main/secrets.h
+*.bin
+*.elf
+*.map

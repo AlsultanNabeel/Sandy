@@ -1,0 +1,105 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# 🔒 أسرار وبيانات حساسة — لا ترفع أبداً
+# ══════════════════════════════════════════════════════════════════════════════
+.env
+.env.*
+!.env.example
+*.env
+*.key
+*.pem
+*.p12
+*.pfx
+*.secret
+sandy-gcloud-key.json
+sandy/secrets.h
+esp32cam_Camera/secrets.h
+*oauth*.json
+cloud/google-tasks-oauth.json
+cloud/google-tasks-token.json
+local.settings.json
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🗂️ ملفات محلية / مؤقتة
+# ══════════════════════════════════════════════════════════════════════════════
+docs/
+sandy/build/
+esp32cam_Camera/build/
+# ESP-IDF Express install bundle (~2GB, regeneratable via Installation Manager)
+components/
+!frontend/src/components/
+frontend/
+
+# Personal photos converted to RGB565 — regenerate via tools/photo_to_rgb565.py
+sandy/me_photo.h
+sandy/*_photo.h
+Sandy.paln.md
+sandy_camera_config.json
+sandy_local.py
+sandy_config.py
+test_gemini_tts.py
+tts_samples/
+لكي لا ننسى.txt
+# ══════════════════════════════════════════════════════════════════════════════
+# 🗃️ ذاكرة وقواعد بيانات محلية
+# ══════════════════════════════════════════════════════════════════════════════
+faces/
+sandy_memory_db/
+sandy_memory.json
+sandy_session_memory.json
+sandy_topics_fallback.json
+sandy_raw_fallback.json
+daily_plan.json
+reminders.json
+data/
+exports/
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🐍 Python
+# ══════════════════════════════════════════════════════════════════════════════
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.coverage*
+*.sqlite*
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🎙️ صوت وصور مؤقتة
+# ══════════════════════════════════════════════════════════════════════════════
+*.mp3
+*.wav
+*.ogg
+*.aifc
+telegram_voice.*
+Screenshot*
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🖥️ نظام وبيئة تطوير
+# ══════════════════════════════════════════════════════════════════════════════
+.DS_Store
+__MACOSX/
+.vscode/
+*.log
+*.bak
+*.tmp
+*.zip
+vscode-cli.tar.gz
+code
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🤖 ESP32 / Hardware
+# ══════════════════════════════════════════════════════════════════════════════
+esp32cam_Camera/esp32cam_Camera.txt
+sandy/sandy.ino.txt
+wake_word_training/
+wake_word_model.pkl
+.python_packages/
+refresh_google_token.py
+
+
+
+merge_for_ai.py
+
+# Claude Code local state (settings, scheduled tasks, etc.)
+.claude/

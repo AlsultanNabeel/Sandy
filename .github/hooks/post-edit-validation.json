@@ -1,0 +1,12 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "./.venv/bin/python scripts/post_edit_hook.py",
+        "cwd": ".",
+        "timeout": 30
+      }
+    ]
+  }
+}

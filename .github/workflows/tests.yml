@@ -1,0 +1,52 @@
+name: Sandy Tests
+on:
+  push:
+    branches:
+      - "main"
+      - "sandy-task-*"   # ساندي تنشئ هاد الـ branches وتنتظر CI قبل ما تفتح PR
+  pull_request:
+    branches: ["main"]
+
+# السر هون: ضيف هاد المتغير على مستوى الـ workflow كامل
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov bandit ruff
+
+      - name: Run tests with coverage
+        run: |
+          pytest tests/ -v --cov=cloud --cov-report=xml --cov-report=term-missing
+
+      - name: Conflict resolution regression suite
+        run: |
+          pytest tests/test_conflict_resolution.py tests/test_conflict_callback_handler.py -v
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+
+      - name: Security scan (bandit)
+        run: |
+          bandit -r cloud/ -ll
+
+      - name: Code quality (ruff)
+        run: |
+          ruff check cloud/ scripts/

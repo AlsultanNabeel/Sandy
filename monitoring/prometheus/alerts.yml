@@ -1,0 +1,74 @@
+groups:
+  - name: sandy-high-signal
+    rules:
+      - alert: SandyLLMHighFailureRate
+        expr: |
+          (
+            sum(rate(sandy_llm_completion_failure_total[5m]))
+            /
+            clamp_min(
+              sum(rate(sandy_llm_completion_failure_total[5m])) + sum(rate(sandy_llm_completion_success_total[5m])),
+              0.001
+            )
+          ) > 0.20
+        for: 10m
+        labels:
+          severity: warning
+          service: sandy
+        annotations:
+          summary: "Sandy LLM failure rate is elevated"
+          description: "More than 20% of LLM calls failed over the last 5 minutes, sustained for 10 minutes."
+
+      - alert: SandyLLMLatencyP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(sandy_llm_completion_seconds_bucket[5m])) by (le)
+          ) > 10
+        for: 15m
+        labels:
+          severity: warning
+          service: sandy
+        annotations:
+          summary: "Sandy LLM p95 latency is high"
+          description: "The 95th percentile of LLM completion latency is above 10 seconds for 15 minutes."
+
+      - alert: SandyWebhookDedupSpike
+        expr: |
+          (
+            sum(rate(sandy_telegram_webhook_dedup_total[5m]))
+            /
+            clamp_min(sum(rate(sandy_telegram_webhook_ingress_total[5m])), 0.001)
+          ) > 0.30
+        for: 15m
+        labels:
+          severity: warning
+          service: sandy
+        annotations:
+          summary: "Sandy webhook dedup ratio is high"
+          description: "More than 30% of Telegram webhook ingresses are duplicates over a sustained 15-minute window."
+
+      - alert: SandyWebhookIngressDrop
+        expr: |
+          sum(increase(sandy_telegram_webhook_ingress_total[15m])) == 0
+        for: 15m
+        labels:
+          severity: critical
+          service: sandy
+        annotations:
+          summary: "Sandy webhook ingress dropped to zero"
+          description: "No Telegram webhook ingresses were recorded for 15 minutes. Check bot routing, webhook config, or upstream delivery."
+
+      - alert: SandyResumeWaitSpikes
+        expr: |
+          (
+            sum(rate(sandy_agent_resume_wait_shutdown_total[15m]))
+            + sum(rate(sandy_agent_resume_wait_timeout_total[15m]))
+          ) > 0.10
+        for: 15m
+        labels:
+          severity: warning
+          service: sandy
+        annotations:
+          summary: "Sandy resume waits are timing out or being interrupted"
+          description: "Shutdown- or timeout-related resume waits are spiking, which usually means deploy churn or stalled user handoffs."

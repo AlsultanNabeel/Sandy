@@ -1,0 +1,34 @@
+idf_component_register(
+    SRCS
+        "sandy_main.c"
+        "sandy_wifi.c"
+        "sandy_nvs.c"
+        "sandy_servo.c"
+        "sandy_buzzer.c"
+        "sandy_sensor.c"
+        "sandy_motors.c"
+        "sandy_touch.c"
+        "sandy_mic.c"
+        "sandy_mqtt.c"
+        "sandy_ota.c"
+        "sandy_face.c"
+    INCLUDE_DIRS
+        "include"
+        "."
+    REQUIRES
+        esp_wifi
+        esp_event
+        mqtt
+        nvs_flash
+        driver
+        esp_https_ota
+        esp_netif
+        esp_timer
+        log
+        freertos
+        app_update
+        esp_adc
+        esp_task_wdt
+        esp_lcd
+        lvgl
+)
