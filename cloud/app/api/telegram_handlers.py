@@ -1,6 +1,7 @@
 import io
 import logging
 import threading
+import time as _time_mod
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
@@ -25,8 +26,30 @@ logger = logging.getLogger(__name__)
 
 # جلسات تسجيل بصمة الصوت (Phase 4): chat_id → قائمة عيّنات PCM مجمّعة.
 # مؤقتة في الذاكرة — تبدأ بـ /enroll_voice وتنتهي بـ /enroll_done أو /enroll_cancel.
+# مع TTL + cap عشان جلسة بدأت وما خلصت ما تظل تراكم PCM بالذاكرة للأبد.
 _voice_enroll_sessions: Dict[int, list] = {}
+_voice_enroll_last_seen: Dict[int, float] = {}
 _ENROLL_MIN_SAMPLES = 3
+_ENROLL_SESSION_TTL_SEC = 30 * 60
+_ENROLL_MAX_SESSIONS = 20
+
+
+def _evict_stale_enroll_sessions() -> None:
+    """يحذف جلسات التسجيل الراكدة (تجاوزت TTL) ويلتزم بالـ cap."""
+    now = _time_mod.time()
+    stale = [
+        k for k, ts in _voice_enroll_last_seen.items()
+        if now - ts > _ENROLL_SESSION_TTL_SEC
+    ]
+    for k in stale:
+        _voice_enroll_sessions.pop(k, None)
+        _voice_enroll_last_seen.pop(k, None)
+    if len(_voice_enroll_sessions) > _ENROLL_MAX_SESSIONS:
+        oldest = sorted(_voice_enroll_last_seen.items(), key=lambda x: x[1])
+        overflow = len(_voice_enroll_sessions) - _ENROLL_MAX_SESSIONS
+        for k, _ in oldest[:overflow]:
+            _voice_enroll_sessions.pop(k, None)
+            _voice_enroll_last_seen.pop(k, None)
 
 
 def _chat_action(telegram_bot: Any, chat_id: Any, action: str) -> None:
@@ -357,7 +380,7 @@ def register_basic_telegram_handlers(
                     return intercepted
         except Exception as _e:
             # Never let the resume hook break the chat flow
-            print(f"[resume_hook] suppressed error: {_e}")
+            logger.warning("[resume_hook] suppressed error: %s", _e)
 
         # Morning briefing intercept, keyword-based so it skips LLM routing.
         try:
@@ -385,7 +408,7 @@ def register_basic_telegram_handlers(
                     )
                     return {"text": briefing_text, "reply_markup": None, "image_bytes": None, "caption": ""}
         except Exception as _be:
-            print(f"[briefing_intercept] suppressed error: {_be}")
+            logger.warning("[briefing_intercept] suppressed error: %s", _be)
 
         sess = _get_chat_session(chat_id)
         pending_state = sess.get("pending_action")
@@ -597,7 +620,9 @@ def register_basic_telegram_handlers(
         if not speaker_id.is_available():
             telegram_bot.reply_to(message, "تمييز الصوت مش مفعّل حالياً على السيرفر.")
             return
+        _evict_stale_enroll_sessions()
         _voice_enroll_sessions[chat_id] = []
+        _voice_enroll_last_seen[chat_id] = _time_mod.time()
         telegram_bot.reply_to(
             message,
             "تمام، خلّينا نسجّل صوتك 🎙️\n"
@@ -624,11 +649,13 @@ def register_basic_telegram_handlers(
         _chat_action(telegram_bot, chat_id, "typing")
         ok, n, msg = speaker_id.enroll_speaker(chat_id, samples)
         _voice_enroll_sessions.pop(chat_id, None)
+        _voice_enroll_last_seen.pop(chat_id, None)
         telegram_bot.reply_to(message, msg)
 
     @telegram_bot.message_handler(commands=["enroll_cancel"])
     def handle_enroll_cancel(message):
         existed = _voice_enroll_sessions.pop(message.chat.id, None) is not None
+        _voice_enroll_last_seen.pop(message.chat.id, None)
         telegram_bot.reply_to(
             message, "ألغيت جلسة التسجيل." if existed else "ما في جلسة تسجيل شغّالة."
         )
@@ -699,8 +726,11 @@ def register_basic_telegram_handlers(
             telegram_bot.reply_to(message, "صار خلل أثناء توليد الصورة.")
 
     # buffer لتجميع ألبوم الصور قبل تحويلها لـ PDF
+    # محدود: عدد ألبومات متزامنة + صور لكل ألبوم، عشان bytes ما تتراكم لو الـ flush ما صار.
     _pdf_group_buffer: Dict[str, Dict] = {}  # media_group_id → {images, chat_id, timer}
     _pdf_group_lock = threading.Lock()
+    _PDF_MAX_GROUPS = 10
+    _PDF_MAX_IMAGES_PER_GROUP = 30
 
     def _flush_pdf_group(group_id: str):
         with _pdf_group_lock:
@@ -785,8 +815,15 @@ def register_basic_telegram_handlers(
             if group_id and is_pdf_request:
                 with _pdf_group_lock:
                     if group_id not in _pdf_group_buffer:
+                        # احذف أقدم ألبوم لو وصلنا الحد عشان ما تتراكم الـ bytes
+                        if len(_pdf_group_buffer) >= _PDF_MAX_GROUPS:
+                            oldest_id = next(iter(_pdf_group_buffer))
+                            old_entry = _pdf_group_buffer.pop(oldest_id, None)
+                            if old_entry and old_entry.get("timer"):
+                                old_entry["timer"].cancel()
                         _pdf_group_buffer[group_id] = {"images": [], "chat_id": chat_id, "timer": None}
-                    _pdf_group_buffer[group_id]["images"].append(image_bytes)
+                    if len(_pdf_group_buffer[group_id]["images"]) < _PDF_MAX_IMAGES_PER_GROUP:
+                        _pdf_group_buffer[group_id]["images"].append(image_bytes)
                     old_timer = _pdf_group_buffer[group_id]["timer"]
                     if old_timer:
                         old_timer.cancel()
@@ -1026,7 +1063,7 @@ def register_basic_telegram_handlers(
                     chat_id,
                     reply_text,
                     reply_to_message_id=message.message_id,
-                    parse_mode="Markdown",
+                    parse_mode=None,
                 )
 
         except Exception as e:
@@ -1080,6 +1117,7 @@ def register_basic_telegram_handlers(
                     return
                 session = _voice_enroll_sessions[chat_id]
                 session.append(pcm)
+                _voice_enroll_last_seen[chat_id] = _time_mod.time()
                 hint = (
                     "بعتلي كمان أو اكتب /enroll_done"
                     if len(session) >= _ENROLL_MIN_SAMPLES
@@ -1418,7 +1456,6 @@ def register_basic_telegram_handlers(
         """Inline yes/no buttons for confirming a pending action."""
         try:
             chat_id = call.message.chat.id
-            find_user_profile(chat_id, mongo_db=getattr(agent, "mongo_db", None))
             if not _profile_allows_full_access(chat_id):
                 telegram_bot.answer_callback_query(call.id, "هذا خاص بنبيل 😊")
                 return
@@ -1564,7 +1601,6 @@ def register_basic_telegram_handlers(
     def handle_task_callback(call):
         try:
             chat_id = call.message.chat.id
-            find_user_profile(chat_id, mongo_db=getattr(agent, "mongo_db", None))
 
             if not _profile_allows_full_access(chat_id):
                 telegram_bot.answer_callback_query(call.id, "هذا خاص بنبيل 😊")
@@ -1713,7 +1749,6 @@ def register_basic_telegram_handlers(
     def handle_image_callback(call):
         try:
             chat_id = call.message.chat.id
-            find_user_profile(chat_id, mongo_db=getattr(agent, "mongo_db", None))
             # callback_data: "img_variation:r" → نستخرج action ومصدر الصورة
             raw = call.data
             if ":" in raw:
@@ -1723,12 +1758,12 @@ def register_basic_telegram_handlers(
                 action_data, src_tag = raw, "g"
             tag_to_source = {"s": "camera_snapshot", "r": "camera_room_scan", "g": "generated"}
             last_source = tag_to_source.get(src_tag, "generated")
-            # نضبط call.data للـ logic القديم
-            call.data = action_data
+            # نستخدم متغير محلي بدل تعديل call.data نفسه (نخلّي اللوق يحفظ القيمة الأصلية)
+            action = action_data
             print(f"[img_btn] {action_data} source={last_source!r}")
 
             # نسخة ثانية لصورة كاميرا → نتجاوز الـ LLM ونستدعي الكاميرا مباشرة
-            if call.data == "img_variation" and last_source == "camera_snapshot":
+            if action == "img_variation" and last_source == "camera_snapshot":
                 telegram_bot.answer_callback_query(call.id, "🔄")
                 _chat_action(telegram_bot, chat_id, "upload_photo")
                 try:
@@ -1743,7 +1778,7 @@ def register_basic_telegram_handlers(
                     telegram_bot.send_message(chat_id, "ما قدرت ألتقط الصورة — ESP-CAM ما رد.")
                 return
 
-            if call.data == "img_variation" and last_source == "camera_room_scan":
+            if action == "img_variation" and last_source == "camera_room_scan":
                 telegram_bot.answer_callback_query(call.id, "🔄")
                 _chat_action(telegram_bot, chat_id, "upload_photo")
                 try:
@@ -1758,21 +1793,21 @@ def register_basic_telegram_handlers(
                     telegram_bot.send_message(chat_id, "ما قدرت أمسح الغرفة — ESP-CAM ما رد.")
                 return
 
-            if call.data == "img_variation":
+            if action == "img_variation":
                 synthetic_message = "اعمل variation نسخة ثانية من نفس الصورة الأخيرة"
             else:
                 action_map = {
                     "img_edit": "عدّل نفس الصورة الأخيرة",
                     "img_describe": "اوصف الصورة الأخيرة، شو فيها",
                 }
-                synthetic_message = action_map.get(call.data, "")
+                synthetic_message = action_map.get(action, "")
             if not synthetic_message:
                 telegram_bot.answer_callback_query(call.id)
                 return
 
             # progress message للأزرار
             _progress_msg = None
-            if call.data == "img_edit":
+            if action == "img_edit":
                 telegram_bot.answer_callback_query(call.id, "✏️")
                 _send_voice_reply(
                     chat_id, "شو التعديل اللي بدك ياه بالصورة؟ احكيلي وبعدّلها 🎨"
@@ -1787,12 +1822,12 @@ def register_basic_telegram_handlers(
                     "asked_at": __import__("datetime").datetime.now().isoformat(),
                 }
                 return
-            elif call.data == "img_variation":
+            elif action == "img_variation":
                 telegram_bot.answer_callback_query(call.id, "🔄")
                 _progress_msg = telegram_bot.send_message(
                     chat_id, "🔄 عم أولّد نسخة جديدة..."
                 )
-            elif call.data == "img_describe":
+            elif action == "img_describe":
                 telegram_bot.answer_callback_query(call.id, "🔍")
                 _progress_msg = telegram_bot.send_message(
                     chat_id, "🔍 عم أحلل الصورة..."
@@ -1800,7 +1835,7 @@ def register_basic_telegram_handlers(
 
             _chat_action(telegram_bot, chat_id, "typing")
 
-            if call.data == "img_describe":
+            if action == "img_describe":
                 last_bytes = _get_chat_session(chat_id).get("last_image_bytes")
                 if last_bytes:
                     analysis = analyze_image_with_azure_fn(

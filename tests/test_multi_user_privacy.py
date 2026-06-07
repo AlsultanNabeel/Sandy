@@ -56,8 +56,10 @@ def test_guest_cannot_use_google_services():
 
 def test_scheduler_targets_owner_only(monkeypatch):
     import app.api.telegram_runtime as telegram_runtime
+    import app.utils.user_profiles as user_profiles
 
-    monkeypatch.setattr(telegram_runtime, "OWNER_CHAT_ID", "999")
+    # OWNER_CHAT_ID is now read from one canonical place at call time.
+    monkeypatch.setattr(user_profiles, "OWNER_CHAT_ID", "999")
 
     sent = []
 

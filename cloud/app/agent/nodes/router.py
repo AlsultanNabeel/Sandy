@@ -12,8 +12,6 @@ from app.agent.graph.state import SandyState, merge_state
 
 logger = logging.getLogger(__name__)
 
-_COMPLEX_INTENTS = {"chat.emotional_support", "chat.general"}
-
 
 def _is_valid_pending(pending: Any) -> bool:
     """pending صالح فقط لو عنده type أو action أو confirmation_status."""
@@ -24,12 +22,6 @@ def _is_valid_pending(pending: Any) -> bool:
         or pending.get("action")
         or pending.get("confirmation_status")
     )
-
-
-_NEGATIVE_MOODS = {"stressed", "frustrated", "sad"}
-_LONG_MESSAGE_THRESHOLD = 40  # كلمة
-
-
 
 
 def route_after_router(state: SandyState) -> str:
@@ -77,22 +69,13 @@ def route_after_router(state: SandyState) -> str:
 
 
 def router_node(state: SandyState) -> SandyState:
-    """LangGraph node: يحدد complexity ويضبط routing_hint.
+    """LangGraph node: يضبط routing_hint وينظّف pending_state الفاسد.
 
     الـ routing نفسه يتم عبر route_after_router() كـ conditional edge.
     """
     try:
-        intent = state.get("intent") or ""
-        mood = state.get("mood") or ""
-        message_len = len((state.get("message") or "").split())
-        is_complex = (
-            intent in _COMPLEX_INTENTS
-            or message_len > _LONG_MESSAGE_THRESHOLD
-            or mood in _NEGATIVE_MOODS
-        )
         updates: dict = {
             "routing_hint": state.get("routing_hint") or "execute_direct",
-            "complexity": state.get("complexity") or ("complex" if is_complex else "simple"),
         }
         # امسح pending_state الناقص/الفاسد — يمنع crash في pending_node
         pending = state.get("pending_state")

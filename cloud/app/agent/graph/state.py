@@ -7,7 +7,7 @@ TypedDict موحد يمر عبر كل nodes في الـ graph.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, List, Optional, TypedDict
 
 
@@ -110,7 +110,7 @@ def create_initial_state(
         chat_reply=None,
         error=None,
         source=source,
-        created_at=datetime.utcnow().isoformat(),
+        created_at=datetime.now(timezone.utc).isoformat(),
         image_state=image_state,
         gmail_list_state=gmail_list_state,
         soul_prefetch=None,

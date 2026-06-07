@@ -87,7 +87,10 @@ def _summarize_to_ltm(chat_id: str, user_id: str, messages: List[Dict[str, Any]]
         from app.agent.facade.agent import mongo_db
         from openai import AzureOpenAI
 
-        if not AZURE_OPENAI_API_KEY or mongo_db is None:
+        if mongo_db is None:
+            logger.warning("[graph] STM→LTM skipped: mongo_db is None (facade not initialized?)")
+            return
+        if not AZURE_OPENAI_API_KEY:
             return
 
         turns = "\n".join(
@@ -200,6 +203,10 @@ def _save_emotional_async(state: "SandyState", message: str) -> None:
     def _do_save():
         try:
             from app.agent.facade.agent import mongo_db
+
+            if mongo_db is None:
+                logger.warning("[graph] LTM save skipped: mongo_db is None (facade not initialized?)")
+                return
 
             # A1: ذاكرة عاطفية
             if mood in _SIGNIFICANT_MOODS:
@@ -332,7 +339,7 @@ def run_graph(
             except Exception:
                 pass
 
-            # توجيه: router → specialist (مع chat shortcut للـ confidence العالية)
+            # توجيه: نداء FC واحد على كامل الكتالوج
             state = _route_intent(state)
 
             state = soul_node(state)
@@ -412,7 +419,11 @@ def get_final_reply(state: SandyState) -> Dict[str, Any]:
     text = state.get("final_response") or ""
     chunks = []
     while len(text) > _TG_LIMIT:
-        split_at = text.rfind("\n", 0, _TG_LIMIT) or text.rfind(" ", 0, _TG_LIMIT) or _TG_LIMIT
+        split_at = text.rfind("\n", 0, _TG_LIMIT)
+        if split_at <= 0:
+            split_at = text.rfind(" ", 0, _TG_LIMIT)
+        if split_at <= 0:
+            split_at = _TG_LIMIT
         chunks.append(text[:split_at].strip())
         text = text[split_at:].strip()
     chunks.append(text)

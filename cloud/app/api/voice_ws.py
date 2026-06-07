@@ -609,11 +609,17 @@ def _load_stm_context() -> str:
     return ""
 
 
-def _build_turn_context(user_text: str) -> str:
-    """Build rich per-turn context: STM + semantic LTM + persona + session state."""
+def _voice_memory_context(message: str, *, include_semantic: bool) -> Optional[str]:
+    """Shared rich-context builder for the voice helpers.
+
+    Returns the voice-formatted memory context for the owner chat, or ``None``
+    if there's no owner or the context builder is unavailable (caller decides
+    the fallback). Centralizes the context_builder/mongo_db imports that used to
+    be repeated across the voice helpers.
+    """
     chat_id = _stm_chat_id()
     if not chat_id:
-        return _load_stm_context()
+        return None
     try:
         from app.agent.context_builder import build_memory_context, format_for_voice
         from app.agent.facade.agent import mongo_db
@@ -621,15 +627,21 @@ def _build_turn_context(user_text: str) -> str:
         ctx = build_memory_context(
             chat_id=chat_id,
             user_id=chat_id,
-            message=user_text,
+            message=message,
             mongo_db=mongo_db,
             stm_history=stm_history,
-            include_semantic=True,
+            include_semantic=include_semantic,
         )
         return format_for_voice(ctx)
     except Exception as exc:
         logger.debug("[voice_ws] context_builder skipped: %s", exc)
-        return _load_stm_context()
+        return None
+
+
+def _build_turn_context(user_text: str) -> str:
+    """Build rich per-turn context: STM + semantic LTM + persona + session state."""
+    ctx = _voice_memory_context(user_text, include_semantic=True)
+    return ctx if ctx is not None else _load_stm_context()
 
 
 def _save_voice_turn(user_text: str, sandy_text: str) -> None:
@@ -666,27 +678,13 @@ def _build_system_instruction() -> str:
     except Exception as exc:
         logger.debug("[voice_ws] memory load skipped: %s", exc)
 
-    # Rich MongoDB context: persona directives + session state + STM
-    try:
-        from app.agent.context_builder import build_memory_context, format_for_voice
-        from app.agent.facade.agent import mongo_db
-        chat_id = _stm_chat_id()
-        if chat_id:
-            stm_history = _load_stm_history()
-            ctx = build_memory_context(
-                chat_id=chat_id,
-                user_id=chat_id,
-                message="",            # no query yet at session start
-                mongo_db=mongo_db,
-                stm_history=stm_history,
-                include_semantic=False, # semantic search happens per-turn via injection
-            )
-            rich_ctx = format_for_voice(ctx)
-            if rich_ctx:
-                parts.append(rich_ctx)
-    except Exception as exc:
-        logger.debug("[voice_ws] context_builder skipped: %s", exc)
-        # fallback: plain STM text
+    # Rich MongoDB context: persona directives + session state + STM. No query
+    # yet at session start; semantic search happens per-turn via injection.
+    rich_ctx = _voice_memory_context("", include_semantic=False)
+    if rich_ctx:
+        parts.append(rich_ctx)
+    elif rich_ctx is None:
+        # No owner / context builder unavailable: fall back to plain STM text.
         stm_context = _load_stm_context()
         if stm_context:
             parts.append(stm_context)

@@ -11,6 +11,7 @@ import time
 from typing import Any, Dict
 
 from app.agent.graph.state import SandyState, merge_state
+from app.agent.tools.schemas.meta_tools import META_TOOLS as _META_TOOLS
 from app.utils.session import build_session_from_state as _build_session_from_state
 
 logger = logging.getLogger(__name__)
@@ -34,12 +35,9 @@ def _get_stream_hooks():
     on_chunk = getattr(_stream_tls, "on_chunk", None)
     return (on_start, on_chunk) if on_start and on_chunk else None
 
-# tools تُعالَج عبر routing logic — ليس عبر ToolDispatcher
-_META_TOOL_NAMES = frozenset({
-    "ask_clarification", "request_confirmation",
-    "chat_respond", "chat_emotional",
-    "pending_confirm", "pending_reject", "pending_select",
-})
+# tools تُعالَج عبر routing logic — ليس عبر ToolDispatcher.
+# مشتقة من META_TOOLS حتى ما تتفرّق القائمتان.
+_META_TOOL_NAMES = frozenset(t["name"] for t in _META_TOOLS)
 
 # prefixes تتطلب صلاحية owner — أي tool يبدأ بأحد هذه لا ينفَّذ إلا للأونر
 # chat/weather/web_search/image لا تحتاج صلاحية خاصة لأنها بيانات عامة
@@ -226,7 +224,7 @@ def execute_node(state: SandyState) -> SandyState:
 
     لو في function_calls (2+) → نفّذ كل tool بالترتيب.
     لو في function_call واحد + tool مسجل → ToolDispatcher.
-    غير هيك → الـ planner القديم (للحذف في Phase 7).
+    غير هيك → مسار chat/fallback (يُستخدم لأي tool غير مسجّل أو intent دردشة).
     """
     # عدة tools برسالة وحدة
     multi_fcs = state.get("function_calls") or []
@@ -258,6 +256,7 @@ def execute_node(state: SandyState) -> SandyState:
 
         replies: list = []
         any_handled = False
+        blocked_any = False
         for fc_item in multi_fcs:
             t_name = fc_item.get("name", "")
             t_args = fc_item.get("args") or {}
@@ -268,6 +267,7 @@ def execute_node(state: SandyState) -> SandyState:
                 continue
             if _requires_owner(t_name) and not is_owner_chat_id(state.get("chat_id")):
                 logger.warning(f"[execute_node] multi: blocked {t_name} for non-owner")
+                blocked_any = True
                 continue
             try:
                 r = dispatcher.dispatch(t_name, t_args, context)
@@ -279,7 +279,13 @@ def execute_node(state: SandyState) -> SandyState:
             except Exception as exc:
                 logger.error(f"[execute_node] multi: {t_name} failed: {exc}")
 
-        combined = "\n".join(replies) if replies else "تم."
+        if blocked_any and not replies:
+            # كل الأدوات المطلوبة خاصة بالأونر — وضّح بدل "تم." الصامتة
+            combined = "هذا خاص بنبيل 😊"
+        elif blocked_any:
+            combined = "\n".join(replies) + "\n(بعض الطلبات خاصة بنبيل 😊)"
+        else:
+            combined = "\n".join(replies) if replies else "تم."
         updates: Dict[str, Any] = {
             "execution_result": {
                 "handled": any_handled,
@@ -408,7 +414,7 @@ def execute_node(state: SandyState) -> SandyState:
             "final_response": reply,
         })
 
-    # الـ planner القديم
+    # مسار chat/fallback — tool غير مسجّل أو intent دردشة
     intent = state.get("intent") or "chat.general"
 
     # pending.* بدون pending_state نشط (router مسحه) → ردّ طبيعي كـ chat

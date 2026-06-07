@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from flask import jsonify, request
 
-from app.api.auth_handlers import verify_token
+from app.api.auth_handlers import require_auth, require_owner
 from app.utils.user_profiles import active_user_profile_context, OWNER_CHAT_ID
 
 _OWNER_PROFILE = {
@@ -43,18 +43,11 @@ _DEMO_TASKS_DONE = [
 ]
 
 
-def _claims():
-    tok = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-    return verify_token(tok)
-
-
 def register_productivity_api(app, mongo_db=None):
     # Reminders (Google Calendar)
     @app.route("/api/reminders", methods=["GET"])
-    def api_list_reminders():
-        claims = _claims()
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
+    @require_auth
+    def api_list_reminders(claims):
         if claims.get("role") != "owner":
             return jsonify({"items": _DEMO_REMINDERS, "demo": True}), 200
         from app.features.google_calendar import list_sandy_reminders
@@ -73,12 +66,8 @@ def register_productivity_api(app, mongo_db=None):
         return jsonify({"items": slim, "demo": False}), 200
 
     @app.route("/api/reminders", methods=["POST"])
-    def api_add_reminder():
-        claims = _claims()
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
-        if claims.get("role") != "owner":
-            return jsonify({"error": "forbidden"}), 403
+    @require_owner
+    def api_add_reminder(claims):
         body = request.get_json(silent=True) or {}
         text = (body.get("text") or "").strip()
         remind_at = (body.get("remind_at") or "").strip()
@@ -97,12 +86,8 @@ def register_productivity_api(app, mongo_db=None):
         return jsonify({"error": res.get("error", "failed")}), 400
 
     @app.route("/api/reminders/<event_id>", methods=["DELETE"])
-    def api_delete_reminder(event_id):
-        claims = _claims()
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
-        if claims.get("role") != "owner":
-            return jsonify({"error": "forbidden"}), 403
+    @require_owner
+    def api_delete_reminder(event_id, claims):
         from app.features.google_calendar import delete_calendar_event_by_id
         with active_user_profile_context(_OWNER_PROFILE):
             ok = delete_calendar_event_by_id(event_id)
@@ -110,10 +95,8 @@ def register_productivity_api(app, mongo_db=None):
 
     # Tasks (Google Tasks)
     @app.route("/api/tasks", methods=["GET"])
-    def api_list_tasks():
-        claims = _claims()
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
+    @require_auth
+    def api_list_tasks(claims):
         completed = request.args.get("completed") in ("1", "true", "yes")
         if claims.get("role") != "owner":
             demo = _DEMO_TASKS_DONE if completed else _DEMO_TASKS
@@ -138,12 +121,8 @@ def register_productivity_api(app, mongo_db=None):
         return jsonify({"items": slim, "demo": False}), 200
 
     @app.route("/api/tasks", methods=["POST"])
-    def api_add_task():
-        claims = _claims()
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
-        if claims.get("role") != "owner":
-            return jsonify({"error": "forbidden"}), 403
+    @require_owner
+    def api_add_task(claims):
         body = request.get_json(silent=True) or {}
         text = (body.get("text") or "").strip()
         due = (body.get("due") or "").strip()
@@ -157,12 +136,8 @@ def register_productivity_api(app, mongo_db=None):
         return jsonify({"error": "failed"}), 400
 
     @app.route("/api/tasks/<task_id>", methods=["PATCH"])
-    def api_update_task(task_id):
-        claims = _claims()
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
-        if claims.get("role") != "owner":
-            return jsonify({"error": "forbidden"}), 403
+    @require_owner
+    def api_update_task(task_id, claims):
         body = request.get_json(silent=True) or {}
         from app.features.google_tasks import (
             rename_task, complete_task, uncomplete_task,
@@ -180,12 +155,8 @@ def register_productivity_api(app, mongo_db=None):
         return jsonify({"ok": bool(ok)}), (200 if ok else 400)
 
     @app.route("/api/tasks/<task_id>", methods=["DELETE"])
-    def api_delete_task(task_id):
-        claims = _claims()
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
-        if claims.get("role") != "owner":
-            return jsonify({"error": "forbidden"}), 403
+    @require_owner
+    def api_delete_task(task_id, claims):
         from app.features.google_tasks import delete_task
         with active_user_profile_context(_OWNER_PROFILE):
             ok = delete_task(task_id, mongo_db=mongo_db)

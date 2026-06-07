@@ -1,15 +1,20 @@
 """Sandy web auth: JWT access control with a Telegram approval flow."""
 from __future__ import annotations
 
+import functools
 import hashlib
 import hmac
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 import jwt  # PyJWT
+from flask import jsonify, request
+
+logger = logging.getLogger(__name__)
 
 _JWT_ALGO = "HS256"
 OWNER_TOKEN_HOURS = 24 * 7   # 7 days
@@ -50,6 +55,50 @@ def verify_token(token: str) -> Optional[dict]:
         return None
 
 
+def _claims_from_request() -> Optional[dict]:
+    """Extract + verify a token from the Authorization header, falling back to a
+    ``token`` field in the JSON body (same precedence the endpoints used inline)."""
+    auth_header = request.headers.get("Authorization", "")
+    token_str = auth_header.removeprefix("Bearer ").strip()
+    if not token_str:
+        body = request.get_json(silent=True) or {}
+        token_str = (body.get("token") or "").strip()
+    if not token_str:
+        return None
+    return verify_token(token_str)
+
+
+def require_auth(view):
+    """Reject the request with 401 unless a valid token is present.
+
+    On success the decoded claims are passed to the view as ``claims=``.
+    """
+
+    @functools.wraps(view)
+    def _wrapped(*args, **kwargs):
+        claims = _claims_from_request()
+        if not claims:
+            return jsonify({"error": "unauthorized"}), 401
+        return view(*args, claims=claims, **kwargs)
+
+    return _wrapped
+
+
+def require_owner(view):
+    """Like ``require_auth`` but also requires the ``owner`` role (403 otherwise)."""
+
+    @functools.wraps(view)
+    def _wrapped(*args, **kwargs):
+        claims = _claims_from_request()
+        if not claims:
+            return jsonify({"error": "unauthorized"}), 401
+        if claims.get("role") != "owner":
+            return jsonify({"error": "forbidden"}), 403
+        return view(*args, claims=claims, **kwargs)
+
+    return _wrapped
+
+
 def check_owner_password(password: str) -> bool:
     owner_pass = os.getenv("OWNER_PASSWORD", "")
     if not owner_pass:
@@ -73,6 +122,10 @@ def check_rate_limit(ip: str) -> Tuple[bool, int]:
     """Returns (allowed, attempts_remaining). Fails open if Redis unavailable."""
     r = _redis()
     if not r:
+        logger.warning(
+            "[auth] rate limit failing OPEN: Redis unavailable; "
+            "login brute-force protection is disabled"
+        )
         return True, _RATE_MAX
     key = f"auth:rate:{ip}"
     try:
@@ -81,13 +134,18 @@ def check_rate_limit(ip: str) -> Tuple[bool, int]:
         pipe.expire(key, _RATE_WINDOW)
         count = pipe.execute()[0]
         return count <= _RATE_MAX, max(0, _RATE_MAX - count)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[auth] rate limit failing OPEN: Redis error (%s); "
+            "login brute-force protection is disabled",
+            exc,
+        )
         return True, _RATE_MAX
 
 
 def store_access_request(name: str, reason: str = "") -> str:
     """Store pending request in Redis, return request_id."""
-    request_id = str(uuid.uuid4())[:8]
+    request_id = uuid.uuid4().hex
     r = _redis()
     if r:
         r.setex(

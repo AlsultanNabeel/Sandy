@@ -1,3 +1,4 @@
+import functools
 import os
 import time
 from datetime import datetime
@@ -9,16 +10,197 @@ from app.agent.proactive_context import (
 )
 from app.agent.memory import save_memory
 from app.api.webhook import create_telegram_webhook_app
+from app.utils import user_profiles
 from app.utils.time import USER_TZ
-from app.utils.user_profiles import OWNER_CHAT_ID, active_user_profile_context
+from app.utils.user_profiles import active_user_profile_context
 
 # Cooldown state for Heroku health alerts, so we don't repeat the same alert
 # within 30 minutes.
 _heroku_alert_state: Dict[str, Any] = {}
 
-# Remember the OWNER_CHAT_ID we imported at startup, so we can tell when a test
-# has monkeypatched either this module or app.utils.user_profiles.
-_ORIGINAL_OWNER_CHAT_ID = OWNER_CHAT_ID
+
+def send_proactive_insight(agent, telegram_bot, owner_chat_id: str) -> None:
+    """Send a low-frequency proactive nudge grounded in repeated memory patterns."""
+    if not owner_chat_id:
+        return
+
+    try:
+        state = agent.memory.setdefault("sandy_state", {}) if isinstance(getattr(agent, "memory", None), dict) else {}
+        last_sent_raw = str(state.get("last_proactive_insight_at") or "").strip()
+        if last_sent_raw:
+            try:
+                last_sent = datetime.fromisoformat(last_sent_raw)
+                if last_sent.tzinfo is None:
+                    last_sent = last_sent.replace(tzinfo=USER_TZ)
+                else:
+                    last_sent = last_sent.astimezone(USER_TZ)
+                if (datetime.now(USER_TZ) - last_sent).total_seconds() < 172800:
+                    return
+            except Exception:
+                pass
+
+        mongo_db = getattr(agent, "mongo_db", None)
+        need_hint = build_proactive_need_hint(
+            owner_chat_id,
+            owner_chat_id,
+            mongo_db=mongo_db,
+            min_count=3,
+        )
+        interest_topic = get_proactive_interest_candidate(
+            owner_chat_id,
+            owner_chat_id,
+            mongo_db=mongo_db,
+            min_count=3,
+        )
+
+        need_reply = ""
+        interest_reply = ""
+
+        if interest_topic:
+            try:
+                from app.agent.executor.dispatch import execute_operational_action
+
+                research_result = execute_operational_action(
+                    "research",
+                    {"query": f"أحدث وأفید شي عن {interest_topic}", "type": "general", "count": 3},
+                    user_message=f"شاركيني شي مفيد عن {interest_topic}",
+                    normalized_user_message=f"شاركيني شي مفيد عن {interest_topic}",
+                    session={"chat_id": owner_chat_id, "user_id": owner_chat_id},
+                    session_file=None,
+                    mongo_db=mongo_db,
+                    tasks_file=None,
+                    create_chat_completion_fn=None,
+                    save_session_fn=lambda *args, **kwargs: None,
+                )
+                if research_result.get("handled"):
+                    interest_reply = str(research_result.get("reply") or "").strip()
+            except Exception as exc:
+                print(f"[Proactive] research failed: {exc}", flush=True)
+
+        if need_hint:
+            need_reply = f"🧠 لاحظت نمطاً متكرراً عندك: {need_hint}"
+
+        if not need_reply and not interest_reply:
+            return
+
+        lines = ["🔔 Sandy — ملاحظة استباقية"]
+        if need_reply:
+            lines.append(need_reply)
+        if interest_reply:
+            lines.append(f"📚 شي قد يفيدك حول اهتماماتك:\n{interest_reply}")
+
+        telegram_bot.send_message(owner_chat_id, "\n\n".join(lines), parse_mode=None)
+        if isinstance(getattr(agent, "memory", None), dict):
+            agent.memory.setdefault("sandy_state", {})["last_proactive_insight_at"] = datetime.now(USER_TZ).isoformat()
+            if interest_topic:
+                agent.memory.setdefault("sandy_state", {})["last_proactive_interest_topic"] = interest_topic
+            save_memory(
+                agent.memory,
+                memory_file=agent.memory_file,
+                mongo_db=agent.mongo_db,
+            )
+    except Exception as e:
+        print(f"[Proactive] Error: {e}", flush=True)
+
+
+def check_heroku_health(telegram_bot, owner_chat_id: str) -> None:
+    """Check Heroku health every 5 min and alert the owner on crashes or memory issues."""
+    if not owner_chat_id:
+        return
+    try:
+        from app.tools.heroku_tool import (
+            _API_KEY,
+            get_logs,
+            diagnose_logs,
+            get_dyno_status,
+        )
+
+        if not _API_KEY():
+            return
+
+        # Gather data
+        dyno_status = None
+        log_text = None
+        issues: list = []
+
+        try:
+            dyno_status = get_dyno_status()
+        except Exception as _de:
+            print(f"[HerokuAlert] dyno check failed: {_de}", flush=True)
+
+        try:
+            log_text = get_logs(lines=100)
+            # M14a: only platform-level errors here (H10/H12/R14/R15/H14).
+            # Python exceptions go through Sentry. Counting bare 'ERROR'
+            # substrings used to spam the same alert every 5 min for hours
+            # while the same line slowly aged out of the rolling 100-line
+            # window.
+            issues = diagnose_logs(log_text)
+        except Exception as _le:
+            print(f"[HerokuAlert] log check failed: {_le}", flush=True)
+
+        if dyno_status and not dyno_status.get("all_up"):
+            for d in dyno_status.get("crashed", []):
+                entry = f"🔴 Dyno توقف: `{d}`"
+                if entry not in issues:
+                    issues.append(entry)
+
+        if not issues:
+            # All clear: reset the cooldown so the next real alert fires right away.
+            _heroku_alert_state.clear()
+            return
+
+        # Cooldown: skip if we've seen the same issue labels in the last 30 min.
+        # Compare as a sorted set of labels (not the raw list) so ordering or
+        # one-off variations don't defeat the dedup.
+        now = datetime.now(USER_TZ)
+        issue_labels = sorted(set(issues))
+        last_labels = _heroku_alert_state.get("labels")
+        last_time = _heroku_alert_state.get("time")
+        if (
+            last_labels == issue_labels
+            and last_time is not None
+            and (now - last_time).total_seconds() < 1800
+        ):
+            return
+
+        # Build and send the alert
+        tail = ""
+        if log_text:
+            tail_lines = log_text.strip().splitlines()[-5:]
+            tail = "\n```\n" + "\n".join(tail_lines)[:600] + "\n```"
+
+        issues_text = "\n".join(f"• {i}" for i in issues)
+        msg = (
+            "🚨 *تنبيه Sandy — Heroku*\n\n"
+            f"{issues_text}"
+            f"{tail}\n\n"
+            "خليني أصلح؟ _(ردّ: نعم / لا)_"
+        )
+        telegram_bot.send_message(owner_chat_id, msg, parse_mode="Markdown")
+        print(f"[HerokuAlert] Alert sent: {issues}", flush=True)
+
+        _heroku_alert_state["labels"] = issue_labels
+        _heroku_alert_state["time"] = now
+
+        # M5: record each label so the incident tracker can escalate to a
+        # GitHub issue when the same one keeps firing.
+        try:
+            from app.agent import incident_tracker
+            tail_evidence = "\n".join(log_text.strip().splitlines()[-10:]) \
+                if log_text else ""
+            for label in issue_labels:
+                incident_tracker.maybe_escalate(
+                    source="heroku",
+                    category=label,
+                    detail=f"Heroku alerter saw `{label}`.",
+                    evidence=tail_evidence,
+                )
+        except Exception as _ie:
+            print(f"[HerokuAlert] incident_tracker hook failed: {_ie}", flush=True)
+
+    except Exception as e:
+        print(f"[HerokuAlert] Unexpected error: {e}", flush=True)
 
 
 def prepare_telegram_polling(telegram_bot):
@@ -213,24 +395,10 @@ def configure_sandy_scheduler(
     sandy_user_chat_id: str,
     check_reminders_fn,
 ):
-    # Resolve OWNER_CHAT_ID at runtime so test patches are respected; the value
-    # imported at module load may be stale. We check both this module's
-    # OWNER_CHAT_ID and the shared app.utils.user_profiles one, comparing each
-    # against the value recorded at import time, and prefer whichever a test
-    # appears to have changed.
-    owner_val = OWNER_CHAT_ID
-    try:
-        from app.utils import user_profiles
-
-        up_val = getattr(user_profiles, "OWNER_CHAT_ID", None)
-    except Exception:
-        up_val = None
-
-    if OWNER_CHAT_ID != _ORIGINAL_OWNER_CHAT_ID:
-        owner_val = OWNER_CHAT_ID
-    elif up_val is not None and up_val != _ORIGINAL_OWNER_CHAT_ID:
-        owner_val = up_val
-
+    # Resolve OWNER_CHAT_ID from one canonical place at call time
+    # (app.utils.user_profiles) so tests patch exactly that attribute and the
+    # value never goes stale behind a module-load snapshot.
+    owner_val = getattr(user_profiles, "OWNER_CHAT_ID", None)
     owner_chat_id = (owner_val or sandy_user_chat_id or "").strip()
     owner_profile = {
         "chat_id": owner_chat_id,
@@ -267,89 +435,6 @@ def configure_sandy_scheduler(
         except Exception as e:
             print(f"[Briefing] Error: {e}")
 
-    def send_proactive_insight():
-        """Send a low-frequency proactive nudge grounded in repeated memory patterns."""
-        if not owner_chat_id:
-            return
-
-        try:
-            state = agent.memory.setdefault("sandy_state", {}) if isinstance(getattr(agent, "memory", None), dict) else {}
-            last_sent_raw = str(state.get("last_proactive_insight_at") or "").strip()
-            if last_sent_raw:
-                try:
-                    last_sent = datetime.fromisoformat(last_sent_raw)
-                    if last_sent.tzinfo is None:
-                        last_sent = last_sent.replace(tzinfo=USER_TZ)
-                    else:
-                        last_sent = last_sent.astimezone(USER_TZ)
-                    if (datetime.now(USER_TZ) - last_sent).total_seconds() < 172800:
-                        return
-                except Exception:
-                    pass
-
-            mongo_db = getattr(agent, "mongo_db", None)
-            need_hint = build_proactive_need_hint(
-                owner_chat_id,
-                owner_chat_id,
-                mongo_db=mongo_db,
-                min_count=3,
-            )
-            interest_topic = get_proactive_interest_candidate(
-                owner_chat_id,
-                owner_chat_id,
-                mongo_db=mongo_db,
-                min_count=3,
-            )
-
-            need_reply = ""
-            interest_reply = ""
-
-            if interest_topic:
-                try:
-                    from app.agent.executor.dispatch import execute_operational_action
-
-                    research_result = execute_operational_action(
-                        "research",
-                        {"query": f"أحدث وأفید شي عن {interest_topic}", "type": "general", "count": 3},
-                        user_message=f"شاركيني شي مفيد عن {interest_topic}",
-                        normalized_user_message=f"شاركيني شي مفيد عن {interest_topic}",
-                        session={"chat_id": owner_chat_id, "user_id": owner_chat_id},
-                        session_file=None,
-                        mongo_db=mongo_db,
-                        tasks_file=None,
-                        create_chat_completion_fn=None,
-                        save_session_fn=lambda *args, **kwargs: None,
-                    )
-                    if research_result.get("handled"):
-                        interest_reply = str(research_result.get("reply") or "").strip()
-                except Exception as exc:
-                    print(f"[Proactive] research failed: {exc}", flush=True)
-
-            if need_hint:
-                need_reply = f"🧠 لاحظت نمطاً متكرراً عندك: {need_hint}"
-
-            if not need_reply and not interest_reply:
-                return
-
-            lines = ["🔔 Sandy — ملاحظة استباقية"]
-            if need_reply:
-                lines.append(need_reply)
-            if interest_reply:
-                lines.append(f"📚 شي قد يفيدك حول اهتماماتك:\n{interest_reply}")
-
-            telegram_bot.send_message(owner_chat_id, "\n\n".join(lines), parse_mode=None)
-            if isinstance(getattr(agent, "memory", None), dict):
-                agent.memory.setdefault("sandy_state", {})["last_proactive_insight_at"] = datetime.now(USER_TZ).isoformat()
-                if interest_topic:
-                    agent.memory.setdefault("sandy_state", {})["last_proactive_interest_topic"] = interest_topic
-                save_memory(
-                    agent.memory,
-                    memory_file=agent.memory_file,
-                    mongo_db=agent.mongo_db,
-                )
-        except Exception as e:
-            print(f"[Proactive] Error: {e}", flush=True)
-
     def run_owner_reminders():
         if not owner_chat_id:
             return None
@@ -358,105 +443,6 @@ def configure_sandy_scheduler(
                 send_message_fn=telegram_bot.send_message,
                 user_chat_id=owner_chat_id,
             )
-
-    def check_heroku_health():
-        """Check Heroku health every 5 min and alert the owner on crashes or memory issues."""
-        if not owner_chat_id:
-            return
-        try:
-            from app.tools.heroku_tool import (
-                _API_KEY,
-                get_logs,
-                diagnose_logs,
-                get_dyno_status,
-            )
-
-            if not _API_KEY():
-                return
-
-            # Gather data
-            dyno_status = None
-            log_text = None
-            issues: list = []
-
-            try:
-                dyno_status = get_dyno_status()
-            except Exception as _de:
-                print(f"[HerokuAlert] dyno check failed: {_de}", flush=True)
-
-            try:
-                log_text = get_logs(lines=100)
-                # M14a: only platform-level errors here (H10/H12/R14/R15/H14).
-                # Python exceptions go through Sentry. Counting bare 'ERROR'
-                # substrings used to spam the same alert every 5 min for hours
-                # while the same line slowly aged out of the rolling 100-line
-                # window.
-                issues = diagnose_logs(log_text)
-            except Exception as _le:
-                print(f"[HerokuAlert] log check failed: {_le}", flush=True)
-
-            if dyno_status and not dyno_status.get("all_up"):
-                for d in dyno_status.get("crashed", []):
-                    entry = f"🔴 Dyno توقف: `{d}`"
-                    if entry not in issues:
-                        issues.append(entry)
-
-            if not issues:
-                # All clear: reset the cooldown so the next real alert fires right away.
-                _heroku_alert_state.clear()
-                return
-
-            # Cooldown: skip if we've seen the same issue labels in the last 30 min.
-            # Compare as a sorted set of labels (not the raw list) so ordering or
-            # one-off variations don't defeat the dedup.
-            now = datetime.now(USER_TZ)
-            issue_labels = sorted(set(issues))
-            last_labels = _heroku_alert_state.get("labels")
-            last_time = _heroku_alert_state.get("time")
-            if (
-                last_labels == issue_labels
-                and last_time is not None
-                and (now - last_time).total_seconds() < 1800
-            ):
-                return
-
-            # Build and send the alert
-            tail = ""
-            if log_text:
-                tail_lines = log_text.strip().splitlines()[-5:]
-                tail = "\n```\n" + "\n".join(tail_lines)[:600] + "\n```"
-
-            issues_text = "\n".join(f"• {i}" for i in issues)
-            msg = (
-                "🚨 *تنبيه Sandy — Heroku*\n\n"
-                f"{issues_text}"
-                f"{tail}\n\n"
-                "خليني أصلح؟ _(ردّ: نعم / لا)_"
-            )
-            telegram_bot.send_message(owner_chat_id, msg, parse_mode="Markdown")
-            print(f"[HerokuAlert] Alert sent: {issues}", flush=True)
-
-            _heroku_alert_state["labels"] = issue_labels
-            _heroku_alert_state["time"] = now
-
-            # M5: record each label so the incident tracker can escalate to a
-            # GitHub issue when the same one keeps firing.
-            try:
-                from app.agent import incident_tracker
-                tail_evidence = "\n".join(log_text.strip().splitlines()[-10:]) \
-                    if log_text else ""
-                for label in issue_labels:
-                    incident_tracker.maybe_escalate(
-                        source="heroku",
-                        category=label,
-                        detail=f"Heroku alerter saw `{label}`.",
-                        evidence=tail_evidence,
-                    )
-            except Exception as _ie:
-                print(f"[HerokuAlert] incident_tracker hook failed: {_ie}", flush=True)
-
-        except Exception as e:
-            print(f"[HerokuAlert] Unexpected error: {e}", flush=True)
 
     def log_memory_usage():
         """يطبع استهلاك الذاكرة كل ٥ دقايق — للكشف عن leaks."""
@@ -471,6 +457,14 @@ def configure_sandy_scheduler(
 
     scheduler.add_job(daily_briefing, "cron", hour=6, minute=0)
     scheduler.add_job(run_owner_reminders, "interval", minutes=1)
-    scheduler.add_job(send_proactive_insight, "interval", days=2)
+    scheduler.add_job(
+        functools.partial(send_proactive_insight, agent, telegram_bot, owner_chat_id),
+        "interval",
+        days=2,
+    )
     scheduler.add_job(log_memory_usage, "interval", minutes=5)
-    scheduler.add_job(check_heroku_health, "interval", minutes=5)
+    scheduler.add_job(
+        functools.partial(check_heroku_health, telegram_bot, owner_chat_id),
+        "interval",
+        minutes=5,
+    )

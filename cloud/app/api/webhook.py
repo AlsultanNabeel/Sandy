@@ -1,8 +1,10 @@
 import json
+import logging
 import os
 import hmac
 import hashlib
 import time
+from datetime import datetime, timezone
 
 from flask import Flask, abort, jsonify, request
 from flask_cors import CORS
@@ -20,6 +22,8 @@ from app.agent.chroma_memory import chroma_stats
 from app.utils.error_tracking import log_unhandled_exception
 from app.tools.heroku_tool import analyze_build_logs, format_build_alert
 
+logger = logging.getLogger(__name__)
+
 
 def create_telegram_webhook_app(
     *,
@@ -29,6 +33,20 @@ def create_telegram_webhook_app(
     mongo_db=None,
     chroma_stats_fn=chroma_stats,
 ):
+    # Imported here (not at module top) so importing this module stays free of
+    # the PyJWT dependency until the app is actually built. The decorators below
+    # are applied when this factory runs, which is after import.
+    from app.api.auth_handlers import (
+        approve_access_request,
+        check_owner_password,
+        check_rate_limit,
+        deny_access_request,
+        get_access_request,
+        make_token,
+        require_auth,
+        store_access_request,
+    )
+
     app = Flask(__name__)
     CORS(app, resources={r"/api/*": {"origins": os.getenv("FRONTEND_URL", "*")}})
 
@@ -262,7 +280,7 @@ def create_telegram_webhook_app(
                                 "commit_message": commit_msg,
                                 "branch": run.get("head_branch"),
                                 "created_at": run.get("created_at"),
-                                "timestamp": __import__("datetime").datetime.utcnow(),
+                                "timestamp": datetime.now(timezone.utc),
                             }
                         )
                     except Exception as e:
@@ -593,7 +611,6 @@ def create_telegram_webhook_app(
             func=lambda call: call.data.startswith("access_approve:") or call.data.startswith("access_deny:")
         )
         def handle_access_callback(call):
-            from app.api.auth_handlers import approve_access_request, deny_access_request
             parts = call.data.split(":", 1)
             action, request_id = parts[0], parts[1]
             try:
@@ -614,10 +631,8 @@ def create_telegram_webhook_app(
     # Auth endpoints
     @app.route("/api/auth", methods=["POST"])
     def web_auth():
-        from flask import request as _req
-        from app.api.auth_handlers import check_owner_password, check_rate_limit, make_token
-        body = _req.get_json(silent=True) or {}
-        ip = _req.headers.get("X-Forwarded-For", _req.remote_addr or "unknown").split(",")[0].strip()
+        body = request.get_json(silent=True) or {}
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
         allowed, remaining = check_rate_limit(ip)
         if not allowed:
             return jsonify({"error": "too_many_attempts"}), 429
@@ -632,10 +647,8 @@ def create_telegram_webhook_app(
 
     @app.route("/api/access/request", methods=["POST"])
     def web_access_request():
-        from flask import request as _req
-        from app.api.auth_handlers import store_access_request
         from app.config import OWNER_CHAT_ID
-        body = _req.get_json(silent=True) or {}
+        body = request.get_json(silent=True) or {}
         name = (body.get("name") or "زاير").strip()[:50]
         reason = (body.get("reason") or "").strip()[:200]
         request_id = store_access_request(name, reason)
@@ -660,7 +673,6 @@ def create_telegram_webhook_app(
 
     @app.route("/api/access/status/<request_id>", methods=["GET"])
     def web_access_status(request_id):
-        from app.api.auth_handlers import get_access_request
         data = get_access_request(request_id)
         if not data:
             return jsonify({"status": "expired"}), 404
@@ -678,13 +690,8 @@ def create_telegram_webhook_app(
         return f"web_chat_{claims.get('jti', 'guest')}"
 
     @app.route("/api/chat/history", methods=["GET"])
-    def get_chat_history():
-        from flask import request as _req
-        from app.api.auth_handlers import verify_token
-        token_str = _req.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        claims = verify_token(token_str)
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
+    @require_auth
+    def get_chat_history(claims):
         if mongo_db is None:
             return jsonify({"messages": []}), 200
         key = _chat_history_key(claims)
@@ -692,17 +699,12 @@ def create_telegram_webhook_app(
         return jsonify({"messages": doc["messages"] if doc else []}), 200
 
     @app.route("/api/chat/history", methods=["PUT"])
-    def put_chat_history():
-        from flask import request as _req
-        from app.api.auth_handlers import verify_token
-        from datetime import datetime, timezone, timedelta
-        token_str = _req.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        claims = verify_token(token_str)
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
+    @require_auth
+    def put_chat_history(claims):
+        from datetime import timedelta
         if mongo_db is None:
             return jsonify({"ok": True}), 200
-        body = _req.get_json(silent=True) or {}
+        body = request.get_json(silent=True) or {}
         messages = body.get("messages", [])
         key = _chat_history_key(claims)
         expire_at = None if claims.get("role") == "owner" else \
@@ -715,21 +717,12 @@ def create_telegram_webhook_app(
 
     # Web agent endpoint: full SA pipeline, shared memory.
     @app.route("/api/agent", methods=["POST"])
-    def web_agent():
-        from flask import request as _req
-        from app.api.auth_handlers import verify_token
+    @require_auth
+    def web_agent(claims):
         from app.agent.graph.graph import run_graph, get_final_reply
         from app.config import SANDY_USER_CHAT_ID
-        from app.config import (AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY,
-                                AZURE_OPENAI_API_VERSION, AZURE_OPENAI_CHAT_DEPLOYMENT)
-        from openai import AzureOpenAI
 
-        body = _req.get_json(silent=True) or {}
-        auth_header = _req.headers.get("Authorization", "")
-        token_str = auth_header.removeprefix("Bearer ").strip() or body.get("token", "")
-        claims = verify_token(token_str)
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
+        body = request.get_json(silent=True) or {}
 
         message = (body.get("message") or "").strip()
         if not message:
@@ -783,15 +776,11 @@ def create_telegram_webhook_app(
                     }), 200
                 return jsonify({"reply": text, "role": "owner"}), 200
             except Exception as exc:
-                return jsonify({"error": str(exc)}), 500
+                logger.exception("[web_agent] owner pipeline failed")
+                log_unhandled_exception(mongo_db, exc, source="web_agent")
+                return jsonify({"error": "internal_error"}), 500
 
         # Guest path: rate-limit check, then a friendly basic chat.
-        # This is the public Sandy. She knows her name and who built her, but
-        # she shouldn't use the owner's private flavor (pet names like
-        # "يا عيوني", signature words/emojis) or make up stories about Nabeel
-        # or her "updates". Identity yes, intimacy no.
-        _GUEST_PERSONALITY = ("أنتِ ساندي، مساعدة ذكية فلسطينية طوّرك نبيل السلطان. إذا سُئلتِ «من أنتِ؟» ردي بابتسامة: «أنا ساندي، من تطوير نبيل السلطان، ومهمتي أكون مساعدتك الذكية.. شو بقدر أقدم لك اليوم؟». أسلوبك ودود، مهذب، وعفوي، بتستخدمي اللهجة الفلسطينية بلمسات خفيفة وتلقائية بتعطي دفا للمحادثة. التزمي بالاختصار، خلي ردودك دايماً مفيدة، وإذا ما عندك معلومة قوليها بكل صراحة وبساطة بدون أي تكلف أو تأليف."
-        )
         from app.agent.guest_usage import check_and_increment, guest_label
         jti = claims.get("jti", "")
         # One shared budget for guests across chat, search, voice and images.
@@ -812,13 +801,10 @@ def create_telegram_webhook_app(
             }), 403
 
         try:
+            from app.config import GUEST_PERSONALITY
+            from app.agent.facade.agent import create_chat_completion
             history = body.get("history") or []
-            client = AzureOpenAI(
-                api_key=AZURE_OPENAI_API_KEY,
-                azure_endpoint=AZURE_OPENAI_ENDPOINT,
-                api_version=AZURE_OPENAI_API_VERSION,
-            )
-            guest_system = _GUEST_PERSONALITY
+            guest_system = GUEST_PERSONALITY
             if lang == "en":
                 guest_system += (
                     " IMPORTANT: The user is on the English interface — reply in natural, "
@@ -830,23 +816,19 @@ def create_telegram_webhook_app(
                 r = "user" if h.get("role") == "user" else "assistant"
                 messages.append({"role": r, "content": h.get("text", "")})
             messages.append({"role": "user", "content": message})
-            resp = client.chat.completions.create(
-                model=AZURE_OPENAI_CHAT_DEPLOYMENT, messages=messages, max_tokens=300
-            )
+            # Route through the shared chat-completion helper so guest chat gets
+            # the same circuit breaker + timeouts as the rest of the pipeline.
+            resp = create_chat_completion(messages=messages, max_tokens=300)
             return jsonify({"reply": resp.choices[0].message.content, "role": "guest"}), 200
         except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+            logger.exception("[web_agent] guest chat failed")
+            log_unhandled_exception(mongo_db, exc, source="web_agent_guest")
+            return jsonify({"error": "internal_error"}), 500
 
     @app.route("/api/image", methods=["POST"])
-    def web_image():
-        from flask import request as _req
-        from app.api.auth_handlers import verify_token
-        auth_header = _req.headers.get("Authorization", "")
-        body = _req.get_json(silent=True) or {}
-        token_str = auth_header.removeprefix("Bearer ").strip() or body.get("token", "")
-        claims = verify_token(token_str)
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
+    @require_auth
+    def web_image(claims):
+        body = request.get_json(silent=True) or {}
 
         prompt = (body.get("prompt") or "").strip()
         if not prompt:
@@ -879,19 +861,16 @@ def create_telegram_webhook_app(
                 return jsonify({"url": f"data:image/png;base64,{b64}"}), 200
             return jsonify({"error": "تعذّر توليد الصورة"}), 500
         except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+            logger.exception("[web_image] image generation failed")
+            log_unhandled_exception(mongo_db, exc, source="web_image")
+            return jsonify({"error": "internal_error"}), 500
 
     @app.route("/api/guest-usage/status", methods=["GET"])
-    def guest_usage_status():
+    @require_auth
+    def guest_usage_status(claims):
         """Read-only poll so the web UI can tell a guest when the owner
         approved or rejected their pending request. Does NOT consume usage."""
-        from flask import request as _req
-        from app.api.auth_handlers import verify_token
         from app.agent.guest_usage import get_usage_doc
-        token_str = _req.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        claims = verify_token(token_str)
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
         if claims.get("role") == "owner":
             return jsonify({"state": "approved", "count": 0, "limit": 0}), 200
         # unified budget → always read the shared "all" doc, whatever type the UI polls
@@ -904,16 +883,10 @@ def create_telegram_webhook_app(
         }), 200
 
     @app.route("/api/analyze-image", methods=["POST"])
-    def web_analyze_image():
+    @require_auth
+    def web_analyze_image(claims):
         """Analyze an image (base64) via Azure Vision and return Sandy's description."""
-        from flask import request as _req
-        from app.api.auth_handlers import verify_token
-        auth_header = _req.headers.get("Authorization", "")
-        body = _req.get_json(silent=True) or {}
-        token_str = auth_header.removeprefix("Bearer ").strip() or body.get("token", "")
-        claims = verify_token(token_str)
-        if not claims:
-            return jsonify({"error": "unauthorized"}), 401
+        body = request.get_json(silent=True) or {}
 
         image_b64 = (body.get("image") or "").strip()
         question = (body.get("question") or "صف هذه الصورة بتفصيل").strip()
@@ -951,7 +924,9 @@ def create_telegram_webhook_app(
             )
             return jsonify({"reply": reply or "تعذّر تحليل الصورة"}), 200
         except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
+            logger.exception("[web_analyze_image] image analysis failed")
+            log_unhandled_exception(mongo_db, exc, source="web_analyze_image")
+            return jsonify({"error": "internal_error"}), 500
 
     @app.route('/')
     def index():

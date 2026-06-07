@@ -356,7 +356,7 @@ def _parse_fc_response(raw: str) -> Dict[str, Any]:
         "name": str(fc["name"]),
         "args": fc.get("args") or {},
     }
-    for field in ("mood", "persona_intensity", "persona_snippet", "confidence"):
+    for field in ("mood", "sandy_face", "persona_intensity", "persona_snippet", "confidence"):
         if field in parsed:
             result[field] = parsed[field]
     return result
