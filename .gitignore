@@ -103,3 +103,5 @@ merge_for_ai.py
 
 # Claude Code local state (settings, scheduled tasks, etc.)
 .claude/
+# ESP-IDF managed components (downloaded by the component manager)
+firmware/**/managed_components/
