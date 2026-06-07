@@ -66,7 +66,8 @@ def encrypt_field(value: str) -> str:
         token = f.encrypt(value.encode("utf-8")).decode("ascii")  # type: ignore[attr-defined]
         return f"{_PREFIX}{token}"
     except Exception as exc:
-        logger.debug(f"[ltm_crypto] encrypt failed: {exc}")
+        # Warn, not debug: a failed encrypt means plaintext gets stored.
+        logger.warning(f"[ltm_crypto] encrypt failed, storing plaintext: {exc}")
         return value
 
 

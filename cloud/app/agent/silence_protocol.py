@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
@@ -19,7 +20,10 @@ _PRE_EVENT_BUFFER_MINUTES = 2
 
 # cache لنتيجة فحص التقويم عشان نقلّل الاستدعاءات (افتراضي 120 ثانية)
 _CALENDAR_CACHE_TTL = int(os.getenv("SANDY_CALENDAR_CACHE_TTL", "120"))
-_calendar_cache: dict = {"timestamp": 0.0, "result": False}
+# لو فشل التقويم بنفتح (ما نسكت) بس نكاش النتيجة لفترة قصيرة عشان نعيد الفحص بسرعة.
+_FAIL_OPEN_TTL = 15
+_calendar_cache: dict = {"expires_at": 0.0, "result": False}
+_calendar_cache_lock = threading.Lock()
 
 # ساعات الهدوء الافتراضية لو الـ env فاضي: من 23:00 لـ 07:00
 _DEFAULT_QUIET_START = 23
@@ -89,10 +93,10 @@ def is_user_in_meeting(now: Optional[datetime] = None) -> bool:
     SANDY_CALENDAR_CACHE_TTL (افتراضي 120 ثانية) عشان نقلّل استدعاءات التقويم.
     """
     # نشوف الـ cache أول، بس لما now تكون None (الوقت الصريح بيتخطّى الـ cache)
-    if now is None and _calendar_cache["timestamp"]:
-        age = time.time() - _calendar_cache["timestamp"]
-        if age < _CALENDAR_CACHE_TTL:
-            return _calendar_cache["result"]
+    if now is None:
+        with _calendar_cache_lock:
+            if time.time() < _calendar_cache["expires_at"]:
+                return _calendar_cache["result"]
 
     try:
         from app.features.google_calendar import _get_calendar_service, calendar_id
@@ -124,16 +128,18 @@ def is_user_in_meeting(now: Optional[datetime] = None) -> bool:
                 break
 
         # خزّن النتيجة في الـ cache
-        _calendar_cache["timestamp"] = time.time()
-        _calendar_cache["result"] = result
+        with _calendar_cache_lock:
+            _calendar_cache["expires_at"] = time.time() + _CALENDAR_CACHE_TTL
+            _calendar_cache["result"] = result
         return result
 
     except Exception as exc:
         # لو فشل التقويم، ما بنسكت لأن التواصل أولى
         logger.debug(f"[silence_protocol] calendar check failed: {exc}")
-        # خزّن النتيجة fail-open كمان لفترة قصيرة
-        _calendar_cache["timestamp"] = time.time()
-        _calendar_cache["result"] = False
+        # fail-open لفترة قصيرة بس، عشان ما نضل ساكتين/فاتحين بعد ما يرجع التقويم
+        with _calendar_cache_lock:
+            _calendar_cache["expires_at"] = time.time() + _FAIL_OPEN_TTL
+            _calendar_cache["result"] = False
         return False
 
 

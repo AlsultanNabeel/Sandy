@@ -48,7 +48,7 @@ _RELATION_NAME_RE = re.compile(
 def detect_relationships(message: str) -> List[Tuple[str, str]]:
     """يطلّع (relation, name) من الرسالة، أو قائمة فاضية لو ما في.
 
-    >>> detect_relationships("اليوم اتصلت بأخوي محمد")
+    >>> detect_relationships("أخوي اسمه محمد")
     [('أخ', 'محمد')]
     """
     found: List[Tuple[str, str]] = []

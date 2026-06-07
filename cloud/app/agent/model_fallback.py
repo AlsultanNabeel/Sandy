@@ -48,8 +48,19 @@ def route_with_gpt(message: str) -> Optional[str]:
             max_tokens=60,
             temperature=0,
         )
-        data = json.loads(resp.choices[0].message.content.strip())
-        intent = str(data.get("intent") or "chat").lower()
+        raw = (resp.choices[0].message.content or "").strip()
+        if "```" in raw:
+            parts = raw.split("```")
+            raw = parts[1] if len(parts) > 1 else parts[0]
+            if raw.lstrip().lower().startswith("json"):
+                raw = raw.lstrip()[4:]
+            raw = raw.strip()
+        try:
+            data = json.loads(raw)
+            intent = str(data.get("intent") or "chat").lower()
+        except (ValueError, AttributeError):
+            # Malformed reply: degrade to plain chat instead of giving up.
+            intent = "chat"
         logger.info(f"[model_fallback] GPT routing fallback, intent={intent}")
         return intent
     except Exception as exc:

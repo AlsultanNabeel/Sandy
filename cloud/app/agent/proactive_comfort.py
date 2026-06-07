@@ -12,6 +12,7 @@ soul_node بعد ما يجيب wellness، وبترجّع override للـ intensi
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -23,16 +24,24 @@ _LATE_HOUR_START = 0
 _LATE_HOUR_END = 4
 
 # لو ذكر المستخدم وحدة من هدول، نسمح للمواساة تشتغل برا ساعات السهر
-_FATIGUE_KEYWORDS = (
+_FATIGUE_KEYWORDS_AR = (
     "تعبان", "تعبانة", "متعب", "متعبة", "ارهاق", "إرهاق",
     "سهران", "سهرانة", "سهرت", "ما نمت", "ما نام", "نعسان", "نعسانة",
-    "مرهق", "مرهقة", "tired", "exhausted", "sleepy", "no sleep",
+    "مرهق", "مرهقة",
 )
+_FATIGUE_KEYWORDS_EN = ("tired", "exhausted", "sleepy", "no sleep")
 
 
 def _user_signals_fatigue(message: str) -> bool:
     msg = (message or "").lower()
-    return any(kw in msg for kw in _FATIGUE_KEYWORDS)
+    if any(kw in msg for kw in _FATIGUE_KEYWORDS_AR):
+        return True
+    # English: match whole words so "tired" doesn't fire inside "retired".
+    words = set(re.findall(r"[a-z']+", msg))
+    for kw in _FATIGUE_KEYWORDS_EN:
+        if (kw in msg) if " " in kw else (kw in words):
+            return True
+    return False
 
 
 def _is_currently_late() -> bool:

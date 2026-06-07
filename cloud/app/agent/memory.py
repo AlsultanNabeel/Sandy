@@ -101,9 +101,16 @@ def save_memory(
 
     if mongo_db is not None:
         try:
+            doc = {**memory, "_id": "sandy_memory"}
+            # Cap the chat log so the single doc can't approach the 16MB BSON
+            # limit. Keep the most recent entries; build a new list so the
+            # caller's memory dict isn't mutated.
+            convos = doc.get("conversations")
+            if isinstance(convos, list) and len(convos) > 500:
+                doc["conversations"] = convos[-500:]
             mongo_db["memory"].replace_one(
                 {"_id": "sandy_memory"},
-                {**memory, "_id": "sandy_memory"},
+                doc,
                 upsert=True,
             )
             return
@@ -166,11 +173,12 @@ def save_session(
 
     if mongo_db is not None:
         try:
-            if isinstance(session.get("messages"), list):
-                session["messages"] = session["messages"][-20:]
+            # Trim into the saved copy only; don't mutate the caller's session.
+            messages = session.get("messages")
+            messages = messages[-20:] if isinstance(messages, list) else []
 
             session_to_save = {
-                "messages": session.get("messages", []),
+                "messages": messages,
                 "pending_action": session.get("pending_action"),
                 "task_aliases": session.get("task_aliases", {}),
                 "completed_task_aliases": session.get("completed_task_aliases", {}),

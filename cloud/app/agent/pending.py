@@ -29,6 +29,12 @@ def create_pending_action(
 def get_valid_pending_action(
     session: Optional[Dict[str, Any]],
 ) -> Optional[Dict[str, Any]]:
+    """Return the live pending action, or None.
+
+    Note: this is not a pure read. When the stored action is missing, expired,
+    or already consumed it clears `session["pending_action"]` as a side effect,
+    so don't call it if you only want to peek.
+    """
     if not isinstance(session, dict):
         return None
 

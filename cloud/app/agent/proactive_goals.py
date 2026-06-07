@@ -7,12 +7,13 @@ soft directive to soul_node so Sandy asks about progress on her own.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_STALE_DAYS = 7
+_STALE_DAYS = int(os.getenv("SANDY_GOAL_STALE_DAYS", "7"))
 
 
 def get_goals_followup_context(chat_id: str, user_id: str, mongo_db) -> Optional[str]:
@@ -31,7 +32,7 @@ def get_goals_followup_context(chat_id: str, user_id: str, mongo_db) -> Optional
                 ],
             },
             {"_id": 0, "text": 1},
-            limit=3,
+            limit=2,
         ))
         texts = [g["text"] for g in goals if g.get("text")]
         if not texts:

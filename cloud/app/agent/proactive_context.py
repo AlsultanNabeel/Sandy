@@ -163,7 +163,7 @@ def build_proactive_need_hint(
                 "chat_id": str(chat_id),
                 "label": {"$in": sorted(_PROACTIVE_LABELS)},
             },
-            {"_id": 0, "pattern": 1, "text": 1, "content": 1, "description": 1, "habit": 1, "work_pattern": 1, "goal": 1, "label": 1},
+            {"_id": 0, **{f: 1 for f in _PATTERN_FIELDS}, "label": 1},
             sort=[("created_at", -1)],
             limit=200,
         ))
