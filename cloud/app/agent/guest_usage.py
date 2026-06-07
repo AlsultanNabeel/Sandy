@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 _COLLECTION = "guest_usage"
 _DEFAULT_LIMIT = 3
+# Cap how many daily reminders we send the owner about one pending guest, so a
+# long-pending request can't ping forever.
+_MAX_REPINGS = 3
 # "all" is the shared budget: chat, search, voice and images draw from one
 # counter per guest, so a guest gets `_DEFAULT_LIMIT` messages across everything.
 _CHAT_TYPES = frozenset({"all", "image", "search", "chat"})
@@ -108,10 +111,11 @@ def check_and_increment(
             if notified_at is not None:
                 if notified_at.tzinfo is None:
                     notified_at = notified_at.replace(tzinfo=timezone.utc)
-                if (now - notified_at).total_seconds() > 86_400:
+                reping_count = int(doc.get("reping_count") or 0)
+                if (now - notified_at).total_seconds() > 86_400 and reping_count < _MAX_REPINGS:
                     col.update_one(
                         {"jti": jti, "chat_type": chat_type},
-                        {"$set": {"notified_at": now}},
+                        {"$set": {"notified_at": now}, "$inc": {"reping_count": 1}},
                     )
                     _notify_owner(jti, name, chat_type, count, limit)
             return "pending", count, limit

@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta
 from typing import Any, Dict, List, Optional, Tuple
+import os
 import uuid
 
 from app.utils.arabic_days import WEEKDAY_TO_AR_NAME
 from app.utils.time import USER_TZ
+
+# Active day window for free-slot search (overridable per user/deployment).
+_DAY_START_HOUR = int(os.getenv("SANDY_DAY_START_HOUR", "8"))
+_DAY_END_HOUR = int(os.getenv("SANDY_DAY_END_HOUR", "22"))
 
 MONITORED_CATEGORIES = {"study", "deadline", "volunteer", "meeting"}
 
@@ -177,8 +182,8 @@ def _find_free_slots(
     duration_minutes: int = 60,
     max_slots: int = 3,
 ) -> List[Tuple[datetime, datetime]]:
-    day_start = datetime.combine(target_day, time(hour=8, minute=0), tzinfo=USER_TZ)
-    day_end = datetime.combine(target_day, time(hour=22, minute=0), tzinfo=USER_TZ)
+    day_start = datetime.combine(target_day, time(hour=_DAY_START_HOUR, minute=0), tzinfo=USER_TZ)
+    day_end = datetime.combine(target_day, time(hour=_DAY_END_HOUR, minute=0), tzinfo=USER_TZ)
     needed = timedelta(minutes=max(30, int(duration_minutes or 60)))
 
     busy: List[Tuple[datetime, datetime]] = []

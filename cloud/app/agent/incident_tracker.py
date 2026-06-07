@@ -87,8 +87,13 @@ def should_open_issue(key: str) -> bool:
 
 
 def mark_issue_opened(key: str, issue_url: str) -> None:
+    now = time.time()
     with _lock:
-        _opened_issues[key] = {"url": issue_url, "ts": time.time()}
+        # Drop entries past the dedupe window so the dict can't grow forever.
+        for k in [k for k, v in _opened_issues.items()
+                  if now - v.get("ts", 0) >= _DEDUPE_SECONDS]:
+            del _opened_issues[k]
+        _opened_issues[key] = {"url": issue_url, "ts": now}
 
 
 def _build_issue_body(

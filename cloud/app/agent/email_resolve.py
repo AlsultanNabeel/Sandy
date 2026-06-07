@@ -113,10 +113,14 @@ def _parse_email_field_edit(
             import json as _json
 
             raw = (resp.choices[0].message.content or "").strip()
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
+            if "```" in raw:
+                # Pull the content between the first pair of fences, tolerating
+                # an unclosed or oddly-formatted block instead of throwing.
+                parts = raw.split("```")
+                raw = parts[1] if len(parts) > 1 else parts[0]
+                if raw.lstrip().lower().startswith("json"):
+                    raw = raw.lstrip()[4:]
+                raw = raw.strip()
             data = _json.loads(raw)
             if data.get("field") and data.get("value"):
                 return {

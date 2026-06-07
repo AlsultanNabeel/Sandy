@@ -21,9 +21,15 @@ Call init_mongo_memory(mongo_db, openai_client) once at startup.
 """
 
 import hashlib
+import logging
 from typing import Any, Dict, List, Optional
 
 from app.utils.user_profiles import get_active_user_profile, OWNER_CHAT_ID
+
+logger = logging.getLogger(__name__)
+
+# Warn only once per process when vector search degrades to keyword sort.
+_vector_search_warned = False
 
 _mongo_db = None
 _openai_client = None
@@ -307,7 +313,13 @@ def _vector_search(
             },
         ]
         return list(col.aggregate(pipeline))
-    except Exception:
+    except Exception as exc:
+        global _vector_search_warned
+        if not _vector_search_warned:
+            logger.warning(
+                "[chroma] vector search failed, falling back to keyword sort: %s", exc
+            )
+            _vector_search_warned = True
         return None
 
 
