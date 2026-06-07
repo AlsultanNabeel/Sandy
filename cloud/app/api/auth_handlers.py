@@ -19,7 +19,12 @@ _RATE_MAX = 5                 # max login attempts per window
 
 
 def _jwt_secret() -> str:
-    return os.getenv("JWT_SECRET", "")
+    # No fallback: an empty secret means anyone could forge a token, so we
+    # refuse to sign or verify until JWT_SECRET is set.
+    secret = os.getenv("JWT_SECRET", "")
+    if not secret:
+        raise RuntimeError("JWT_SECRET is not set; refusing to issue or verify tokens")
+    return secret
 
 
 def make_token(role: str) -> str:
@@ -39,6 +44,9 @@ def verify_token(token: str) -> Optional[dict]:
     except jwt.ExpiredSignatureError:
         return None
     except jwt.InvalidTokenError:
+        return None
+    except RuntimeError:
+        # JWT_SECRET missing: reject every token instead of failing open.
         return None
 
 
@@ -108,7 +116,10 @@ def approve_access_request(request_id: str) -> Optional[str]:
     if not raw:
         return None
     data = json.loads(raw)
-    token = make_token("guest")
+    try:
+        token = make_token("guest")
+    except RuntimeError:
+        return None
     data.update({"status": "approved", "token": token})
     r.setex(key, 3600, json.dumps(data))
     return token

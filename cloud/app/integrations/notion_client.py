@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import requests
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -88,8 +89,6 @@ def create_plan_page(title: str, markdown_text: str) -> Optional[str]:
     if not is_configured():
         return None
     try:
-        import requests
-
         payload = {
             "parent": {"page_id": _parent_page_id()},
             "properties": {
@@ -117,8 +116,6 @@ def archive_page(page_url_or_id: str) -> bool:
     if not pid:
         return False
     try:
-        import requests
-
         resp = requests.patch(
             f"{_API}/pages/{pid}", headers=_headers(),
             json={"archived": True}, timeout=_TIMEOUT,
@@ -149,8 +146,6 @@ def update_page_content(page_url_or_id: str, markdown_text: str) -> bool:
     if not pid:
         return False
     try:
-        import requests
-
         # 1) اقرأ البلوكات الحالية وأرشفها (حذف ناعم)
         r = requests.get(
             f"{_API}/blocks/{pid}/children?page_size=100",

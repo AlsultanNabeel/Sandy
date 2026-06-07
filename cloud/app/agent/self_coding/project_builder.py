@@ -1712,14 +1712,14 @@ def _open_project_pr(
     if draft:
         title += " [draft — needs review]"
 
-    groups_block = ""
-    for g in plan.get("groups", []):
-        files = g.get("files") or []
-        groups_block += f"\n**{g.get('name', '?')}** ({len(files)} ملف):\n"
-        for f in files[:10]:
-            groups_block += f"- `{f.get('path', '?')}` — {f.get('purpose', '')}\n"
-        if len(files) > 10:
-            groups_block += f"... و{len(files) - 10} غيرها\n"
+    # The plan schema uses "features" (groups was the legacy name).
+    features_block = ""
+    for ft in plan.get("features", []):
+        n_files = ft.get("estimated_files") or "?"
+        features_block += f"\n**{ft.get('name', '?')}** (~{n_files} ملف):\n"
+        desc = (ft.get("description") or "").strip()
+        if desc:
+            features_block += f"- {desc[:200]}\n"
 
     summary = (plan.get("summary") or "")[:600]
     stack = ", ".join(str(s) for s in (plan.get("stack") or [])[:6])
@@ -1741,9 +1741,15 @@ def _open_project_pr(
     if commit_sha:
         body_parts.append(f"**last commit:** `{commit_sha[:7]}`")
     body_parts.append(f"**عدد الملفات المبنية:** {len(applied)}")
-    if groups_block:
-        body_parts.append("\n#### المجموعات")
-        body_parts.append(groups_block)
+    if features_block:
+        body_parts.append("\n#### الميزات")
+        body_parts.append(features_block)
+    if applied:
+        files_list = "\n".join(f"- `{p}`" for p in applied[:30])
+        if len(applied) > 30:
+            files_list += f"\n... و{len(applied) - 30} غيرها"
+        body_parts.append("\n#### الملفات")
+        body_parts.append(files_list)
 
     # M10: surface any self-review findings the correction round couldn't fix
     raw_review = task.get("self_review_issues") or ""

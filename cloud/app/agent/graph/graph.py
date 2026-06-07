@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from datetime import timezone
 from typing import Any, Dict, List, Optional
 
 from app.agent.graph.state import SandyState, create_initial_state, merge_state
@@ -157,7 +158,7 @@ def _stm_save(chat_id: str, user_id: str, user_msg: str, assistant_reply: str) -
             return
 
         key = f"stm:{chat_id}:{user_id}"
-        now = datetime.datetime.utcnow().isoformat()
+        now = datetime.datetime.now(timezone.utc).isoformat()
 
         with client.client.pipeline() as pipe:
             for _ in range(3):
@@ -237,8 +238,6 @@ def _save_emotional_async(state: "SandyState", message: str) -> None:
 
 
 # التوجيه
-
-_CHAT_SHORTCUT_CONFIDENCE = 0.85
 
 
 def _route_intent(state: "SandyState") -> "SandyState":

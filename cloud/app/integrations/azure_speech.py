@@ -12,6 +12,7 @@ _stt_cb = CircuitBreaker(name="azure_stt", failure_threshold=5, recovery_timeout
 _tts_cb = CircuitBreaker(name="azure_tts", failure_threshold=5, recovery_timeout=60.0)
 
 # A corrupt clip won't pass on a second attempt — extra retries only add latency.
+# range(1, 2) runs once — effectively no retry; intentional per design
 _FFMPEG_MAX_RETRIES = 1
 
 # Bound recognition so a hung call fails fast and the caller degrades gracefully.

@@ -67,7 +67,7 @@ def get_state() -> dict:
 
 # Convenience accessors — أسرع وأوضح في الكود
 def use_prompt_caching() -> bool:
-    # default True بمجرد ما R3 يدخل (overridable لو احتجنا نطفّيه)
+    # default False بمجرد ما R3 يدخل (overridable لو احتجنا نطفّيه)
     return is_enabled("USE_PROMPT_CACHING", default=False)
 
 

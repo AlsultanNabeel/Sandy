@@ -49,6 +49,9 @@ _EXPLORATION_TOOLS = {"read_file", "search_code", "list_tree", "get_branch_diff"
 # Nudge the agent toward action after this many consecutive exploration calls.
 _NUDGE_AT_EXPLORATION_STREAK = 8
 
+# Abort the run after this many — burning more iterations won't help.
+_ABORT_AT_EXPLORATION_STREAK = 15
+
 # M11: Edit-thrashing guard. When the agent keeps patching the same file the
 # scope is almost always unclear and more patches won't converge — the right
 # move is to wrap up or ask the owner. Counts apply_patch + write_new_file
@@ -147,9 +150,6 @@ def _suspend_state(
         "pending_paths_to_approve": list(ctx.pending_paths_to_approve),
         "stall": stall,
     }
-# Abort the run after this many — burning more iterations won't help.
-_ABORT_AT_EXPLORATION_STREAK = 15
-
 
 def run_agent(
     *,

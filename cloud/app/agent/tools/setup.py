@@ -60,4 +60,3 @@ def register_all_tools() -> None:
             count += 1
 
     logger.info(f"[ToolRegistry] {count} tools registered")
-    print(f"[ToolRegistry] {count} tools registered", flush=True)

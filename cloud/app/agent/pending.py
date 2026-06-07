@@ -6,18 +6,17 @@ from uuid import uuid4
 from app.utils.time import USER_TZ
 
 PENDING_ACTION_TTL_MINUTES = 10
-CAIRO_TZ = USER_TZ
 
 
 def _now_iso() -> str:
-    return datetime.now(CAIRO_TZ).isoformat()
+    return datetime.now(USER_TZ).isoformat()
 
 
 def create_pending_action(
     payload: Dict[str, Any], *, ttl_minutes: int = PENDING_ACTION_TTL_MINUTES
 ) -> Dict[str, Any]:
     pending = dict(payload or {})
-    now = datetime.now(CAIRO_TZ)
+    now = datetime.now(USER_TZ)
     pending["created_at"] = pending.get("created_at") or now.isoformat()
     pending["expires_at"] = (
         pending.get("expires_at") or (now + timedelta(minutes=ttl_minutes)).isoformat()
@@ -50,14 +49,14 @@ def get_valid_pending_action(
     try:
         expires_dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
         if expires_dt.tzinfo is None:
-            expires_dt = expires_dt.replace(tzinfo=CAIRO_TZ)
+            expires_dt = expires_dt.replace(tzinfo=USER_TZ)
         else:
-            expires_dt = expires_dt.astimezone(CAIRO_TZ)
+            expires_dt = expires_dt.astimezone(USER_TZ)
     except Exception:
         session["pending_action"] = None
         return None
 
-    if expires_dt <= datetime.now(CAIRO_TZ):
+    if expires_dt <= datetime.now(USER_TZ):
         session["pending_action"] = None
         return None
 

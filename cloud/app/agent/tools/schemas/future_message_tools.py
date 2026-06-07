@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Dict
 
 if TYPE_CHECKING:
@@ -33,14 +33,14 @@ def _parse_when(when_str: str) -> datetime | None:
         amount = int(m.group(1))
         unit = m.group(2)
         days = _NUMS_AR.get(unit, 1) * amount
-        return datetime.utcnow() + timedelta(days=days)
+        return datetime.now(timezone.utc) + timedelta(days=days)
 
     if "بعد سنة" in when_str:
-        return datetime.utcnow() + timedelta(days=365)
+        return datetime.now(timezone.utc) + timedelta(days=365)
     if "بعد شهر" in when_str:
-        return datetime.utcnow() + timedelta(days=30)
+        return datetime.now(timezone.utc) + timedelta(days=30)
     if "بعد اسبوع" in when_str or "بعد أسبوع" in when_str:
-        return datetime.utcnow() + timedelta(days=7)
+        return datetime.now(timezone.utc) + timedelta(days=7)
 
     return None
 

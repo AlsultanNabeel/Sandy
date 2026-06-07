@@ -7,6 +7,7 @@ Sandy ترصد توقيت رسائل المستخدم وتكتشف أنماط ا
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
@@ -137,6 +138,12 @@ def get_avg_activity_hour(
         ))
         if len(docs) < 5:
             return None
-        return sum(d["hour"] for d in docs) / len(docs)
+        # Hour is circular (23 and 1 are close), so a plain mean is wrong.
+        # Average the hours as unit vectors, then convert the angle back.
+        angles = [d["hour"] / 24.0 * 2 * math.pi for d in docs]
+        mean_sin = sum(math.sin(a) for a in angles) / len(angles)
+        mean_cos = sum(math.cos(a) for a in angles) / len(angles)
+        avg = math.atan2(mean_sin, mean_cos) / (2 * math.pi) * 24.0
+        return avg % 24.0
     except Exception:
         return None

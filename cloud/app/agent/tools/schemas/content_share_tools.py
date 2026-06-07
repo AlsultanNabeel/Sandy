@@ -39,8 +39,8 @@ def share_interesting_content(args: Dict[str, Any], ctx: "DispatchContext") -> D
     try:
         from app.agent.tools.registry import get_registry
         registry = get_registry()
-        research_tool = registry.get("research_web")
-        if research_tool:
+        research_tool = registry.get_tool("research_web")
+        if research_tool and research_tool.handler:
             query = f"معلومات مثيرة عن {topic}"
             return research_tool.handler({"query": query}, ctx)
     except Exception as exc:

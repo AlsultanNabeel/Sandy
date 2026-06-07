@@ -37,15 +37,15 @@ def detect_habit_anomaly(
         if avg_hour is None:
             return None
 
-        deviation = abs(current_hour - avg_hour)
-        # تعديل للساعات التي تتجاوز منتصف الليل (مثلاً: avg=22, current=2 → dev=4 لا 20)
-        if deviation > 12:
-            deviation = 24 - deviation
+        # الساعة دائرية، فنحسب الفرق الموقّع ونلفّه إلى المجال (-12, 12].
+        # هكذا يصحّ الاتجاه عبر منتصف الليل (avg=22, current=2 → diff=+4 أي متأخر).
+        diff = (current_hour - avg_hour + 12) % 24 - 12
+        deviation = abs(diff)
 
         if deviation >= _HOUR_DEVIATION_THRESHOLD:
             avg_str = f"{int(avg_hour):02d}:00"
             now_str = now.strftime("%H:%M")
-            if current_hour < avg_hour:
+            if diff < 0:
                 return f"[شذوذ: نشط مبكراً ({now_str}) مقارنةً بعادته ({avg_str})]"
             else:
                 return f"[شذوذ: نشط متأخراً ({now_str}) مقارنةً بعادته ({avg_str})]"

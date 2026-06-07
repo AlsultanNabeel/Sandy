@@ -27,7 +27,7 @@ def _task_match_key(value: str) -> str:
         .replace("ئ", "ي")
         .replace("ى", "ي")
     )
-    text = text.replace("ى", "ي").replace("ة", "ه")
+    text = text.replace("ة", "ه")
     text = re.sub(r"[^\w؀-ۿ]+", " ", text)
 
     tokens = []

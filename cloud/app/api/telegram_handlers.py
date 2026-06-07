@@ -1031,6 +1031,9 @@ def register_basic_telegram_handlers(
 
         except Exception as e:
             print(f"[Error] Document handler: {e}")
+            _log_handler_exception(
+                e, "telegram_handlers.handle_document", chat_id=message.chat.id
+            )
             telegram_bot.reply_to(message, "صار خلل أثناء معالجة الملف.")
 
     @telegram_bot.message_handler(content_types=["voice", "audio"])
@@ -1406,7 +1409,7 @@ def register_basic_telegram_handlers(
                 chat_id=chat_id,
                 extra={"message_id": getattr(message, "message_id", None)},
             )
-            telegram_bot.reply_to(message, f"حدث خطأ: {str(e)}")
+            telegram_bot.reply_to(message, "صار خلل، جرّب كمان مرة.")
 
     @telegram_bot.callback_query_handler(
         func=lambda call: call.data in {"confirm_yes", "confirm_no"}

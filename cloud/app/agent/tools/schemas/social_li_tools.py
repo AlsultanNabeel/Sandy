@@ -101,7 +101,6 @@ def linkedin_confirm(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, 
         has_pending,
         is_configured,
         confirm_pending,
-        pending_op,
     )
 
     if not is_configured():
@@ -119,11 +118,7 @@ def linkedin_confirm(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, 
             "reply": "ما في عملية معلّقة أأكّدها — استعملي linkedin_post أو linkedin_delete أول.",
         }
 
-    op = pending_op(chat_id)
-    ok, msg = confirm_pending(chat_id)
-    if not ok and op == "delete":
-        # أضف تلميحاً إضافياً لفشل الحذف
-        return {"handled": True, "reply": msg}
+    _ok, msg = confirm_pending(chat_id)
     return {"handled": True, "reply": msg}
 
 

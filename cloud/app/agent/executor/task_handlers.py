@@ -310,7 +310,7 @@ def _handle_update_due_date(
 
     elif task_obj:
         if str(task_obj.get("due_at", "")).strip():
-            reply = "هاي المهمة فيها وقت/تذكير محفوظ. تعديل تاريخ المهام اللي فيها وقت مؤجل للمرحلة 6.6.3."
+            reply = "هاي المهمة لسا مش جاهزة"
         else:
             due_iso_for_update = task_due_iso
 

@@ -334,7 +334,7 @@ def get_google_cost() -> Dict[str, Any]:
 
 
 def get_all_costs() -> List[Dict[str, Any]]:
-    return [get_azure_cost(), get_aws_cost(), get_heroku_cost()]
+    return [get_azure_cost(), get_aws_cost(), get_heroku_cost(), get_google_cost()]
 
 
 # Formatting

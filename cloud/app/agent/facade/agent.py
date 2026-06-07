@@ -54,8 +54,6 @@ from app.api.telegram_runtime import (
 from app.utils.time import USER_TZ
 from app.agent.facade.briefing import build_morning_briefing, should_send_briefing
 
-CHROMA_AVAILABLE = False
-
 # Try to import Azure Speech SDK for text-to-speech
 try:
     import azure.cognitiveservices.speech as speechsdk

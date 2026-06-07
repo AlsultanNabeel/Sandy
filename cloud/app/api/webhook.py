@@ -624,7 +624,11 @@ def create_telegram_webhook_app(
         password = (body.get("password") or "").strip()
         if not password or not check_owner_password(password):
             return jsonify({"error": "invalid_password", "remaining": remaining - 1}), 401
-        return jsonify({"token": make_token("owner"), "role": "owner"}), 200
+        try:
+            token = make_token("owner")
+        except RuntimeError:
+            return jsonify({"error": "auth_not_configured"}), 503
+        return jsonify({"token": token, "role": "owner"}), 200
 
     @app.route("/api/access/request", methods=["POST"])
     def web_access_request():

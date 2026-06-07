@@ -191,8 +191,8 @@ def _authenticate(ws, remote: str) -> bool:
     if raw is None:
         return False
 
-    # Legacy plain-text secret (dev / echo tests)
-    if _LEGACY_SECRET and raw == _LEGACY_SECRET:
+    # Legacy plain-text secret (dev / echo tests). Constant-time compare.
+    if _LEGACY_SECRET and isinstance(raw, str) and _hmac.compare_digest(raw, _LEGACY_SECRET):
         ws.send("AUTH_OK")
         return True
 
@@ -248,10 +248,15 @@ def _authenticate(ws, remote: str) -> bool:
             ws.send(json.dumps({"type": "error", "msg": "bad_handshake"}))
             return False
 
-    # No auth configured at all: open access for dev.
+    # No auth configured. Stay closed unless an explicit dev flag opts in,
+    # so a missing env var in prod can't leave the socket wide open.
     if not _HMAC_KEY and not _LEGACY_SECRET:
-        logger.warning("[voice_ws] no auth configured, open from %s", remote)
-        return True
+        if os.environ.get("SANDY_WS_ALLOW_OPEN") == "1":
+            logger.warning("[voice_ws] no auth configured, open access (dev) from %s", remote)
+            return True
+        logger.error("[voice_ws] no auth configured and SANDY_WS_ALLOW_OPEN != 1, refusing %s", remote)
+        ws.send(json.dumps({"type": "error", "msg": "auth_not_configured"}))
+        return False
 
     ws.send(json.dumps({"type": "error", "msg": "auth_fail"}))
     return False

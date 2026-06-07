@@ -225,6 +225,8 @@ def try_handle_resume(
     if intent in {"question", "propose"}:
         return None
 
+    return None
+
 
 def _reply(text: str) -> Dict[str, Any]:
     return {

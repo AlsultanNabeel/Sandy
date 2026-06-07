@@ -324,7 +324,7 @@ def add_calendar_event(
 def list_upcoming_events(max_results: int = 5) -> list:
     try:
         service = _get_calendar_service()
-        now = datetime.utcnow().isoformat() + "Z"
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         filtered_events = []
         page_token = None
@@ -491,7 +491,7 @@ def find_calendar_event_by_title(title: str) -> Dict[str, Any]:
 def delete_calendar_event_by_title(title: str) -> Dict[str, Any]:
     try:
         service = _get_calendar_service()
-        now = datetime.utcnow().isoformat() + "Z"
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         events = []
         page_token = None
@@ -757,7 +757,7 @@ def _format_calendar_dt_ar(value: str) -> str:
 def list_sandy_reminders(max_results: int = 100) -> list:
     try:
         service = _get_calendar_service()
-        now = datetime.utcnow().isoformat() + "Z"
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         reminders = []
         seen_keys = set()

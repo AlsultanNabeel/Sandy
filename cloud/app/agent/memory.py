@@ -1,5 +1,6 @@
 """Persistent memory management: load/save to MongoDB or disk JSON."""
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -9,6 +10,8 @@ from app.utils.user_profiles import (
     active_profile_allows_privileged_access,
     active_profile_is_guest,
 )
+
+logger = logging.getLogger(__name__)
 
 # Defaults
 
@@ -60,7 +63,7 @@ def load_memory(
             memory_doc = mongo_db["memory"].find_one({"_id": "sandy_memory"})
             if memory_doc:
                 memory_doc.pop("_id", None)
-                print("[Memory] loaded from MongoDB")
+                logger.info("[Memory] loaded from MongoDB")
                 return memory_doc
 
             json_memory = read_json_file(memory_file, None)
@@ -70,18 +73,18 @@ def load_memory(
                     {**json_memory, "_id": "sandy_memory"},
                     upsert=True,
                 )
-                print("[Memory] migrated JSON to MongoDB")
+                logger.info("[Memory] migrated JSON to MongoDB")
                 return json_memory
 
-            print("[Memory] MongoDB is source of truth (new memory)")
+            logger.info("[Memory] MongoDB is source of truth (new memory)")
             return default_memory
 
         except Exception as e:
-            print(f"[Memory] MongoDB error: {e}, falling back to JSON")
+            logger.warning(f"[Memory] MongoDB error: {e}, falling back to JSON")
 
     memory_json = read_json_file(memory_file, None)
     if isinstance(memory_json, dict):
-        print("[Memory] loaded from JSON file")
+        logger.info("[Memory] loaded from JSON file")
         return memory_json
 
     return default_memory
@@ -105,10 +108,10 @@ def save_memory(
             )
             return
         except Exception as e:
-            print(f"[Memory] MongoDB save error: {e}, falling back to JSON")
+            logger.warning(f"[Memory] MongoDB save error: {e}, falling back to JSON")
 
     if write_json_file(memory_file, memory):
-        print("[Memory] saved to JSON file")
+        logger.info("[Memory] saved to JSON file")
 
 
 def load_session(
@@ -125,7 +128,7 @@ def load_session(
             session_doc = mongo_db["sessions"].find_one({"_id": "current_session"})
             if session_doc:
                 session_doc.pop("_id", None)
-                print("[Session] loaded from MongoDB")
+                logger.info("[Session] loaded from MongoDB")
                 return session_doc
 
             json_session = read_json_file(session_file, None)
@@ -135,18 +138,18 @@ def load_session(
                     {**json_session, "_id": "current_session"},
                     upsert=True,
                 )
-                print("[Session] migrated JSON to MongoDB")
+                logger.info("[Session] migrated JSON to MongoDB")
                 return json_session
 
-            print("[Session] MongoDB is source of truth (new session)")
+            logger.info("[Session] MongoDB is source of truth (new session)")
             return default_session
 
         except Exception as e:
-            print(f"[Session] MongoDB error: {e}, falling back to JSON")
+            logger.warning(f"[Session] MongoDB error: {e}, falling back to JSON")
 
     session_json = read_json_file(session_file, None)
     if isinstance(session_json, dict):
-        print("[Session] loaded from JSON file")
+        logger.info("[Session] loaded from JSON file")
         return session_json
 
     return default_session
@@ -190,9 +193,9 @@ def save_session(
             )
             return
         except Exception as e:
-            print(f"[Session] MongoDB save error: {e}, falling back to JSON")
+            logger.warning(f"[Session] MongoDB save error: {e}, falling back to JSON")
 
     if write_json_file(session_file, session):
-        print("[Session] saved to JSON file")
+        logger.info("[Session] saved to JSON file")
 
 
