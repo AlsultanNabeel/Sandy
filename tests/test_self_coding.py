@@ -305,7 +305,7 @@ class TestRepoPatchE2EMocked:
         with patch("app.agent.self_coding.repo_patch.get_cached_or_fetch", return_value=mock_view), \
              patch("app.agent.self_coding.repo_patch.github_api.update_file", side_effect=_fake_update), \
                patch("app.agent.self_coding.repo_patch.invalidate_file_cache"), \
-               patch("app.agent.self_coding.repo_patch.validate_written_paths", return_value=(True, "")):
+               patch("app.agent.self_coding.repo_patch.validate_content", return_value=(True, "")):
             result = repo_patch.repo_apply_patch(
                 "f.py",
                 2,
@@ -350,7 +350,7 @@ class TestRepoPatchE2EMocked:
         with patch("app.agent.self_coding.repo_patch.get_cached_or_fetch", side_effect=_fake_view), \
              patch("app.agent.self_coding.repo_patch.github_api.update_file", side_effect=_fake_update), \
                patch("app.agent.self_coding.repo_patch.invalidate_file_cache"), \
-               patch("app.agent.self_coding.repo_patch.validate_written_paths", return_value=(True, "")):
+               patch("app.agent.self_coding.repo_patch.validate_content", return_value=(True, "")):
             result = repo_patch.repo_apply_patch(
                 "f.py",
                 2,
@@ -397,14 +397,14 @@ class TestPostWriteValidation:
 
         validator_calls = []
 
-        def _fake_validate(paths):
-            validator_calls.append(list(paths))
+        def _fake_validate(path, content, **kwargs):
+            validator_calls.append(path)
             return True, ""
 
         with patch("app.agent.self_coding.repo_create.github_api.get_file_contents", return_value={"ok": False, "status": 404}), \
              patch("app.agent.self_coding.repo_create.github_api.create_file", return_value={"ok": True, "commit_sha": "abc123"}), \
              patch("app.agent.self_coding.repo_create.invalidate_file_cache"), \
-             patch("app.agent.self_coding.repo_create.validate_written_paths", side_effect=_fake_validate), \
+             patch("app.agent.self_coding.repo_create.validate_content", side_effect=_fake_validate), \
              patch("app.agent.self_coding.repo_create._record_task_progress"):
             result = repo_create.repo_create_or_replace(
                 "cloud/app/generated_test.txt",
@@ -413,15 +413,15 @@ class TestPostWriteValidation:
             )
 
         assert result["ok"] is True
-        assert validator_calls == [["cloud/app/generated_test.txt"]]
+        assert validator_calls == ["cloud/app/generated_test.txt"]
 
     def test_patch_runs_validator(self):
         from app.agent.self_coding import repo_patch
 
         validator_calls = []
 
-        def _fake_validate(paths):
-            validator_calls.append(list(paths))
+        def _fake_validate(path, content, **kwargs):
+            validator_calls.append(path)
             return True, ""
 
         mock_view = {
@@ -437,7 +437,7 @@ class TestPostWriteValidation:
         with patch("app.agent.self_coding.repo_patch.get_cached_or_fetch", return_value=mock_view), \
              patch("app.agent.self_coding.repo_patch.github_api.update_file", return_value={"ok": True, "status": 200, "commit_sha": "newsha", "new_blob_sha": "blobsha"}), \
              patch("app.agent.self_coding.repo_patch.invalidate_file_cache"), \
-             patch("app.agent.self_coding.repo_patch.validate_written_paths", side_effect=_fake_validate), \
+             patch("app.agent.self_coding.repo_patch.validate_content", side_effect=_fake_validate), \
              patch("app.agent.self_coding.repo_patch._record_task_progress"):
             result = repo_patch.repo_apply_patch(
                 "cloud/app/generated_test.py",
@@ -448,7 +448,7 @@ class TestPostWriteValidation:
             )
 
         assert result["ok"] is True
-        assert validator_calls == [["cloud/app/generated_test.py"]]
+        assert validator_calls == ["cloud/app/generated_test.py"]
 
     def test_create_new_file_blocks_when_locked(self):
         from app.agent.self_coding import repo_create

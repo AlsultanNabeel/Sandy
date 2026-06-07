@@ -55,19 +55,8 @@ class TestRouterNode(unittest.TestCase):
         result = router_node(state)
         self.assertEqual(result["message"], "أنشئ مهمة")
 
-    def test_router_node_sets_complexity_simple(self):
-        from app.agent.nodes.router import router_node
-        state = create_initial_state("أنشئ مهمة", "u1", "c1")
-        state = merge_state(state, {"intent": "task.create", "mood": "calm"})
-        result = router_node(state)
-        self.assertEqual(result["complexity"], "simple")
-
-    def test_router_node_sets_complexity_complex(self):
-        from app.agent.nodes.router import router_node
-        state = create_initial_state("أنا تعبان", "u1", "c1")
-        state = merge_state(state, {"intent": "chat.general", "mood": "calm"})
-        result = router_node(state)
-        self.assertEqual(result["complexity"], "complex")
+    # ملاحظة: حساب الـ complexity انتقل من router_node إلى fc_router،
+    # فما عاد router_node يضبطها — التستات القديمة لذلك انحذفت.
 
 
 if __name__ == "__main__":

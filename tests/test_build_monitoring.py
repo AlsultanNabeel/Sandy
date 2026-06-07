@@ -112,6 +112,7 @@ class TestBuildAlertFormatting:
     def test_alert_includes_commit_info(self):
         """Should include commit hash and branch in alert."""
         build = {
+            "status": "failure",
             "conclusion": "failure",
             "branch": "develop",
             "commit": "xyz789",

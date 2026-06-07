@@ -199,20 +199,22 @@ class TestHerokuCost:
 
 class TestGetAllCosts:
 
-    def test_returns_three_providers(self):
+    def test_returns_four_providers(self):
         def ok(p):
             return {"provider": p, "available": True, "credit_balance": 0,
                     "last_month_spent": 0, "total_spent": 0, "error": ""}
         with patch("app.tools.cost_tool.get_azure_cost", return_value=ok("Azure")), \
              patch("app.tools.cost_tool.get_aws_cost", return_value=ok("AWS")), \
-             patch("app.tools.cost_tool.get_heroku_cost", return_value=ok("Heroku")):
+             patch("app.tools.cost_tool.get_heroku_cost", return_value=ok("Heroku")), \
+             patch("app.tools.cost_tool.get_google_cost", return_value=ok("Google Cloud")):
             results = get_all_costs()
 
-        assert len(results) == 3
+        assert len(results) == 4
         providers = [r["provider"] for r in results]
         assert "Azure" in providers
         assert "AWS" in providers
         assert "Heroku" in providers
+        assert "Google Cloud" in providers
 
 
 # ── format_cost_report ────────────────────────────────────────────────────────
