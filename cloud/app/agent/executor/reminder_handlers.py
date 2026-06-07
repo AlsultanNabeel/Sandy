@@ -17,6 +17,22 @@ from app.features.google_calendar import (
 from app.utils.user_profiles import active_profile_is_owner
 
 
+def _parse_snooze_minutes(time_text: str) -> int:
+    """يحوّل نص الوقت لعدد دقائق: «ساعة» → 60، «١٠ دقائق» → 10. يرجّع 30 كافتراضي."""
+    import re as _re
+
+    txt = time_text.lower()
+    m = _re.search(r"(\d+)\s*(دقيقة|دقائق|minute)", txt)
+    if m:
+        return int(m.group(1))
+    m = _re.search(r"(\d+)\s*(ساعة|ساعات|hour)", txt)
+    if m:
+        return int(m.group(1)) * 60
+    if "ساعة" in txt or "hour" in txt:
+        return 60
+    return 30
+
+
 def handle_reminder_action(
     params: Dict[str, Any],
     *,
@@ -32,6 +48,7 @@ def handle_reminder_action(
     if not active_profile_is_owner():
         return {"handled": True, "reply": "التذكيرات خاصة بنبيل 😊"}
 
+    reply = ""
     reminder_action = str(params.get("action", "create")).strip().lower()
     if reminder_action not in {
         "create",
@@ -210,18 +227,7 @@ def handle_reminder_action(
         elif reminder_action == "snooze":
             snooze_minutes = int(params.get("snooze_minutes", 0) or 0)
             if not snooze_minutes and time_text:
-                # parse "ساعة" → 60, "١٠ دقائق" → 10 etc.
-                txt = time_text.lower()
-                import re as _re
-
-                m = _re.search(r"(\d+)\s*(دقيقة|دقائق|minute)", txt)
-                if m:
-                    snooze_minutes = int(m.group(1))
-                else:
-                    m = _re.search(r"(\d+)\s*(ساعة|ساعات|hour)", txt)
-                    snooze_minutes = int(m.group(1)) * 60 if m else 30
-                    if not m and ("ساعة" in txt or "hour" in txt):
-                        snooze_minutes = 60
+                snooze_minutes = _parse_snooze_minutes(time_text)
             if not snooze_minutes:
                 snooze_minutes = 30
             current_remind = reminder.get("remind_at", "")

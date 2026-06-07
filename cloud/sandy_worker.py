@@ -1,7 +1,7 @@
 """Sandy worker dyno: background processor for project-builder tasks.
 
 This is the entry point for the `worker:` dyno. It loops forever and:
-    1. Recovers tasks stuck in the processing list (BRPOPLPUSH crash recovery).
+    1. Recovers tasks stuck in the processing list (ages them out, requeues).
     2. Moves the next task from queue to processing (BRPOPLPUSH, atomic).
     3. Runs the Project Builder handler for project tasks.
     4. Removes the finished task from the processing list.
@@ -81,6 +81,7 @@ def _setup_signals():
 _RECOVERY_INTERVAL_SECS = 300  # check for stuck processing every 5 min
 _RECOVERY_MAX_AGE_SECS = 1800  # a task stuck over 30 min counts as crashed
 _QUEUE_POLL_TIMEOUT_SECS = 5
+_LOOP_BACKOFF_MAX_SECS = 30  # cap on the exponential backoff after repeated loop errors
 
 
 def run() -> None:
@@ -98,6 +99,7 @@ def run() -> None:
         )
 
     last_recovery = 0.0
+    backoff = 2  # seconds; grows on repeated loop errors, resets on a clean pass
     logger.info(
         "[worker] ready, queue=%d processing=%d",
         sa_redis.queue_size(),
@@ -116,6 +118,7 @@ def run() -> None:
 
             # Atomic pop: queue to processing.
             popped = sa_redis.queue_pop_to_processing(timeout=_QUEUE_POLL_TIMEOUT_SECS)
+            backoff = 2  # Redis is reachable this pass; reset the backoff
             if popped is None:
                 continue
 
@@ -177,11 +180,15 @@ def run() -> None:
                 except Exception:
                     pass
             finally:
-                sa_redis.processing_complete(raw_payload)
+                try:
+                    sa_redis.processing_complete(raw_payload)
+                except Exception as exc:
+                    logger.warning("[worker] processing_complete failed for task=%s: %s", task_id, exc)
 
         except Exception as exc:
             logger.exception("[worker] loop error: %s", exc)
-            time.sleep(2)
+            time.sleep(backoff)
+            backoff = min(backoff * 2, _LOOP_BACKOFF_MAX_SECS)
 
     logger.info("[worker] shutdown complete")
 

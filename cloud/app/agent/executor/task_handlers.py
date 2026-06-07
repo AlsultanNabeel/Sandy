@@ -1504,9 +1504,7 @@ def _handle_create(
     return {"handled": True, "reply": reply}
 
 
-def _handle_list_overdue(
-    *, session, session_file, mongo_db, tasks_file, save_session_fn
-):
+def _handle_list_overdue(*, mongo_db, tasks_file):
     tasks = load_overdue_tasks(mongo_db=mongo_db, tasks_file=tasks_file)
     if not tasks:
         return {"handled": True, "reply": "ما في مهام متأخرة 🎉"}
@@ -1529,9 +1527,7 @@ def _handle_list_overdue(
     }
 
 
-def _handle_delete_completed(
-    *, session, session_file, mongo_db, tasks_file, save_session_fn
-):
+def _handle_delete_completed(*, mongo_db, tasks_file):
     try:
         count = delete_completed_tasks(mongo_db=mongo_db, tasks_file=tasks_file)
         if count == 0:
@@ -1541,9 +1537,7 @@ def _handle_delete_completed(
         return {"handled": True, "reply": f"ما قدرت أحذف المهام المكتملة: {e}"}
 
 
-def _handle_complete_all(
-    *, session, session_file, mongo_db, tasks_file, save_session_fn
-):
+def _handle_complete_all(*, mongo_db, tasks_file):
     try:
         count = complete_all_tasks(mongo_db=mongo_db, tasks_file=tasks_file)
         if count == 0:
@@ -1551,6 +1545,117 @@ def _handle_complete_all(
         return {"handled": True, "reply": f"✅ كمّلت {count} مهمة."}
     except Exception as e:
         return {"handled": True, "reply": f"ما قدرت أكمّل المهام: {e}"}
+
+
+# Common Arabic command prefixes the planner may leave on a task reference
+# ("كمل مهمة ...", "احذف المهمة ..."). The planner should normally supply a clean
+# `reference`; this strip-list is only a fallback and may drift, so keep it here.
+_TASK_REFERENCE_PREFIXES = (
+    "كمل مهمة",
+    "كمل مهمه",
+    "كمل المهمة",
+    "كمل المهمه",
+    "كمّل مهمة",
+    "كمّل مهمه",
+    "كمّل المهمة",
+    "كمّل المهمه",
+    "اكمل مهمة",
+    "اكمل مهمه",
+    "اكمل المهمة",
+    "اكمل المهمه",
+    "أنجز مهمة",
+    "أنجز مهمه",
+    "أنجز المهمة",
+    "أنجز المهمه",
+    "انجز مهمة",
+    "انجز مهمه",
+    "انجز المهمة",
+    "انجز المهمه",
+    "خلص مهمة",
+    "خلص مهمه",
+    "خلص المهمة",
+    "خلص المهمه",
+    "خلصت مهمة",
+    "خلصت مهمه",
+    "خلصت المهمة",
+    "خلصت المهمه",
+    "خصلت مهمة",
+    "خصلت مهمه",
+    "خصلت المهمة",
+    "خصلت المهمه",
+    "أنهيت مهمة",
+    "أنهيت مهمه",
+    "أنهيت المهمة",
+    "أنهيت المهمه",
+    "انهيت مهمة",
+    "انهيت مهمه",
+    "انهيت المهمة",
+    "انهيت المهمه",
+    "رجع مهمة",
+    "رجع مهمه",
+    "رجع المهمة",
+    "رجع المهمه",
+    "رجعي مهمة",
+    "رجعي مهمه",
+    "رجعي المهمة",
+    "رجعي المهمه",
+    "رجّع مهمة",
+    "رجّع مهمه",
+    "رجّع المهمة",
+    "رجّع المهمه",
+    "رجّعي مهمة",
+    "رجّعي مهمه",
+    "رجّعي المهمة",
+    "رجّعي المهمه",
+    "ارجع مهمة",
+    "ارجع مهمه",
+    "ارجع المهمة",
+    "ارجع المهمه",
+    "ارجعي مهمة",
+    "ارجعي مهمه",
+    "ارجعي المهمة",
+    "ارجعي المهمه",
+    "الغ إكمال مهمة",
+    "الغ إكمال مهمه",
+    "الغ إكمال المهمة",
+    "الغ إكمال المهمه",
+    "الغ اكمال مهمة",
+    "الغ اكمال مهمه",
+    "الغ اكمال المهمة",
+    "الغ اكمال المهمه",
+    "الغي إكمال مهمة",
+    "الغي إكمال مهمه",
+    "الغي إكمال المهمة",
+    "الغي إكمال المهمه",
+    "الغي اكمال مهمة",
+    "الغي اكمال مهمه",
+    "الغي اكمال المهمة",
+    "الغي اكمال المهمه",
+    "احذف مهمة",
+    "احذف مهمه",
+    "احذف المهمة",
+    "احذف المهمه",
+    "احذفي مهمة",
+    "احذفي مهمه",
+    "احذفي المهمة",
+    "احذفي المهمه",
+    "امسح مهمة",
+    "امسح مهمه",
+    "امسح المهمة",
+    "امسح المهمه",
+    "امسحي مهمة",
+    "امسحي مهمه",
+    "امسحي المهمة",
+    "امسحي المهمه",
+    "شيل مهمة",
+    "شيل مهمه",
+    "شيل المهمة",
+    "شيل المهمه",
+    "شيلي مهمة",
+    "شيلي مهمه",
+    "شيلي المهمة",
+    "شيلي المهمه",
+)
 
 
 def handle_task_action(
@@ -1611,112 +1716,7 @@ def handle_task_action(
     ):
         task_reference = normalized_user_message
 
-        for prefix in (
-            "كمل مهمة",
-            "كمل مهمه",
-            "كمل المهمة",
-            "كمل المهمه",
-            "كمّل مهمة",
-            "كمّل مهمه",
-            "كمّل المهمة",
-            "كمّل المهمه",
-            "اكمل مهمة",
-            "اكمل مهمه",
-            "اكمل المهمة",
-            "اكمل المهمه",
-            "أنجز مهمة",
-            "أنجز مهمه",
-            "أنجز المهمة",
-            "أنجز المهمه",
-            "انجز مهمة",
-            "انجز مهمه",
-            "انجز المهمة",
-            "انجز المهمه",
-            "خلص مهمة",
-            "خلص مهمه",
-            "خلص المهمة",
-            "خلص المهمه",
-            "خلصت مهمة",
-            "خلصت مهمه",
-            "خلصت المهمة",
-            "خلصت المهمه",
-            "خصلت مهمة",
-            "خصلت مهمه",
-            "خصلت المهمة",
-            "خصلت المهمه",
-            "أنهيت مهمة",
-            "أنهيت مهمه",
-            "أنهيت المهمة",
-            "أنهيت المهمه",
-            "انهيت مهمة",
-            "انهيت مهمه",
-            "انهيت المهمة",
-            "انهيت المهمه",
-            "رجع مهمة",
-            "رجع مهمه",
-            "رجع المهمة",
-            "رجع المهمه",
-            "رجعي مهمة",
-            "رجعي مهمه",
-            "رجعي المهمة",
-            "رجعي المهمه",
-            "رجّع مهمة",
-            "رجّع مهمه",
-            "رجّع المهمة",
-            "رجّع المهمه",
-            "رجّعي مهمة",
-            "رجّعي مهمه",
-            "رجّعي المهمة",
-            "رجّعي المهمه",
-            "ارجع مهمة",
-            "ارجع مهمه",
-            "ارجع المهمة",
-            "ارجع المهمه",
-            "ارجعي مهمة",
-            "ارجعي مهمه",
-            "ارجعي المهمة",
-            "ارجعي المهمه",
-            "الغ إكمال مهمة",
-            "الغ إكمال مهمه",
-            "الغ إكمال المهمة",
-            "الغ إكمال المهمه",
-            "الغ اكمال مهمة",
-            "الغ اكمال مهمه",
-            "الغ اكمال المهمة",
-            "الغ اكمال المهمه",
-            "الغي إكمال مهمة",
-            "الغي إكمال مهمه",
-            "الغي إكمال المهمة",
-            "الغي إكمال المهمه",
-            "الغي اكمال مهمة",
-            "الغي اكمال مهمه",
-            "الغي اكمال المهمة",
-            "الغي اكمال المهمه",
-            "احذف مهمة",
-            "احذف مهمه",
-            "احذف المهمة",
-            "احذف المهمه",
-            "احذفي مهمة",
-            "احذفي مهمه",
-            "احذفي المهمة",
-            "احذفي المهمه",
-            "امسح مهمة",
-            "امسح مهمه",
-            "امسح المهمة",
-            "امسح المهمه",
-            "امسحي مهمة",
-            "امسحي مهمه",
-            "امسحي المهمة",
-            "امسحي المهمه",
-            "شيل مهمة",
-            "شيل مهمه",
-            "شيل المهمة",
-            "شيل المهمه",
-            "شيلي مهمة",
-            "شيلي مهمه",
-            "شيلي المهمة",
-            "شيلي المهمه",
-        ):
+        for prefix in _TASK_REFERENCE_PREFIXES:
             if task_reference.startswith(prefix):
                 task_reference = task_reference[len(prefix) :].strip(" .،")
                 break
@@ -1737,9 +1737,11 @@ def handle_task_action(
     )
     _with_ai = dict(**_common, create_chat_completion_fn=create_chat_completion_fn)
 
+    _tasks_only = dict(mongo_db=mongo_db, tasks_file=tasks_file)
+
     if task_action in {"list", "list_completed", "list_all", "list_overdue"}:
         if task_action == "list_overdue":
-            return _handle_list_overdue(**_common)
+            return _handle_list_overdue(**_tasks_only)
         return _handle_list(task_action, **_common)
     elif task_action == "rename":
         return _handle_rename(task_reference, task_text, **_common)
@@ -1765,7 +1767,7 @@ def handle_task_action(
     elif task_action == "complete_multi":
         return _handle_complete_multi(task_reference, **_common)
     elif task_action == "complete_all":
-        return _handle_complete_all(**_common)
+        return _handle_complete_all(**_tasks_only)
     elif task_action == "delete":
         return _handle_delete(task_reference, **_common)
     elif task_action == "delete_multi":
@@ -1778,7 +1780,7 @@ def handle_task_action(
             save_session_fn=save_session_fn,
         )
     elif task_action == "delete_completed":
-        return _handle_delete_completed(**_common)
+        return _handle_delete_completed(**_tasks_only)
     elif task_action == "bulk_update_due_date":
         return _handle_bulk_update_due_date(params, **_with_ai)
     else:  # create

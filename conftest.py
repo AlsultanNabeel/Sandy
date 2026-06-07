@@ -1,3 +1,6 @@
 import sys
 import os
-sys.path.insert(0, os.path.dirname(__file__))
+
+_HERE = os.path.dirname(__file__)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)

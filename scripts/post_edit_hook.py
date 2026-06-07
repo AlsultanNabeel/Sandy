@@ -28,7 +28,6 @@ def main() -> int:
 
     tool_name = payload.get("tool_name")
     tool_input = payload.get("tool_input") or {}
-    files = list(tool_input.get("files") or [])
 
     if tool_name == "write_new_file":
         expected = tool_input.get("expected_size")
@@ -42,6 +41,7 @@ def main() -> int:
             print("invalid expected_size", file=sys.stderr)
             return 2
 
+        files = list(tool_input.get("files") or [])
         for p in files:
             try:
                 size = Path(p).stat().st_size

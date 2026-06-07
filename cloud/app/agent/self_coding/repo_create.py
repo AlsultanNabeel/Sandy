@@ -22,7 +22,6 @@ from app.agent.self_coding import _redis as sa_redis
 from app.agent.self_coding.post_write_validate import (
     mark_path_written,
     validate_content,
-    validate_written_paths,
 )
 from app.agent.self_coding.repo_view import invalidate_file_cache
 from app.integrations import github_api
@@ -136,10 +135,6 @@ def repo_create_or_replace(
             commit_sha = api.get("commit_sha", "")
             invalidate_file_cache(file_path, sha=sha)
             mark_path_written(repo, branch, file_path)
-            ok, message = validate_written_paths([file_path])
-            if not ok:
-                logger.error("[SA8] post-write validation failed for %s: %s", file_path, message)
-                return _err(file_path, f"post-write validation failed: {message}")
             _record_task_progress(task_id, file_path, commit_sha)
             logger.info("[SA8] replaced %s on %s -> %s", file_path, branch, commit_sha[:7])
             return {
@@ -172,10 +167,6 @@ def repo_create_or_replace(
         commit_sha = api.get("commit_sha", "")
         invalidate_file_cache(file_path)
         mark_path_written(repo, branch, file_path)
-        ok, message = validate_written_paths([file_path])
-        if not ok:
-            logger.error("[SA8] post-write validation failed for %s: %s", file_path, message)
-            return _err(file_path, f"post-write validation failed: {message}")
         _record_task_progress(task_id, file_path, commit_sha)
         logger.info("[SA8] created %s on %s -> %s", file_path, branch, commit_sha[:7])
         return {

@@ -679,7 +679,7 @@ def process_project_task(task_id: str) -> Dict[str, Any]:
         chat_id=str(chat_id) if chat_id else None,
     )
 
-    # 6) Wait for owner decision (approve / revise / cancel / expire)
+    # 7) Wait for owner decision (approve / revise / cancel / expire)
     decision = _await_plan_decision(task_id, task, plan, context)
     if decision["outcome"] == "shutdown":
         return _requeue_for_shutdown(task_id, task, where="project_plan_review")

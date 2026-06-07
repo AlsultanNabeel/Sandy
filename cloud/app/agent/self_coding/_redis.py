@@ -275,7 +275,12 @@ def processing_size() -> int:
 def recover_stale_processing(max_age_seconds: int = 1800) -> int:
     """Move tasks stuck in processing > max_age back to queue. Returns count moved.
 
-    Each task payload carries `enqueued_at` — we check that.
+    Each task payload carries `enqueued_at` — we check that. The default
+    `max_age_seconds` (1800s / 30min) is sized to comfortably exceed the
+    longest legitimate single-step wait (the worker checkpoints far more
+    often than that), so a still-alive worker shouldn't have its task
+    reclaimed. As defense in depth, re-enqueued copies are tagged with
+    `_recovered` so a worker can detect a duplicate if it ever races.
     """
     client = get_client()
     if client is None:
@@ -306,8 +311,19 @@ def recover_stale_processing(max_age_seconds: int = 1800) -> int:
                         if status in ("failed", "expired", "done"):
                             client.lrem(k_task_processing(), 1, raw)
                             continue
+                    # Tag the re-enqueued copy so a worker that's still
+                    # mid-flight on the original (clock skew / long legit
+                    # wait) can detect the duplicate. The normal path is
+                    # unchanged: the task goes back on the queue as before,
+                    # just with a recovery marker + a bumped attempt count.
+                    payload["_recovered"] = True
+                    payload["_recovered_at"] = now
+                    payload["recover_attempt"] = (
+                        int(payload.get("recover_attempt") or 0) + 1
+                    )
+                    requeued = json.dumps(payload, ensure_ascii=False)
                     client.lrem(k_task_processing(), 1, raw)
-                    client.lpush(k_task_queue(), raw)
+                    client.lpush(k_task_queue(), requeued)
                     moved += 1
             except Exception:
                 continue

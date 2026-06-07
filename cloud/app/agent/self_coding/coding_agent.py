@@ -15,6 +15,7 @@ provider is actually serving the call.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from app.agent.self_coding.coding_agent_tools import (
@@ -48,7 +49,6 @@ KEEP_RECENT_TURNS = 10
 _EXPLORATION_TOOLS = {"read_file", "search_code", "list_tree", "get_branch_diff"}
 # Nudge the agent toward action after this many consecutive exploration calls.
 _NUDGE_AT_EXPLORATION_STREAK = 8
-
 # Abort the run after this many — burning more iterations won't help.
 _ABORT_AT_EXPLORATION_STREAK = 15
 
@@ -78,6 +78,25 @@ _WRAP_UP_ANSWER_PREFIXES = (
     "خلاص", "كفاية", "كفى",
     "done", "finish", "wrap", "ship",
 )
+
+
+# Strip the volatile parts of an error string (line/col numbers, shas, hex
+# addresses) so the repeated-error guard fires on the same *kind* of failure
+# even when a changing detail makes two messages byte-different.
+_ERROR_VOLATILE_RE = re.compile(
+    r"(line\s+\d+|col(?:umn)?\s+\d+|:\d+\b|0x[0-9a-fA-F]+|\b[0-9a-f]{7,40}\b|\d+)"
+)
+
+
+def _error_kind(error_text: str) -> str:
+    """Normalize an ERROR string to a comparable 'kind' for the abort guard.
+
+    Drops digits / shas / line-col details and trims to a prefix so two
+    near-identical errors (same failure, changing line number or hash) are
+    treated as the same recurring error."""
+    norm = _ERROR_VOLATILE_RE.sub("", (error_text or "").lower())
+    norm = re.sub(r"\s+", " ", norm).strip()
+    return norm[:160]
 
 
 def _is_negative_answer(answer: str) -> bool:
@@ -150,6 +169,7 @@ def _suspend_state(
         "pending_paths_to_approve": list(ctx.pending_paths_to_approve),
         "stall": stall,
     }
+
 
 def run_agent(
     *,
@@ -442,9 +462,13 @@ def run_agent(
                 recent_errors.append(result_text)
                 if len(recent_errors) > 3:
                     recent_errors = recent_errors[-3:]
-                if (
-                    len(recent_errors) == 3
-                    and recent_errors[0] == recent_errors[1] == recent_errors[2]
+                # Compare on the error *kind* (line numbers / shas stripped) so
+                # a loop that re-hits the same failure with a changing detail
+                # still trips the guard instead of burning the full budget.
+                if len(recent_errors) == 3 and (
+                    _error_kind(recent_errors[0])
+                    == _error_kind(recent_errors[1])
+                    == _error_kind(recent_errors[2])
                 ):
                     return {
                         "ok": False,

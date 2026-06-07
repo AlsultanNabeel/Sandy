@@ -23,7 +23,6 @@ from app.agent.self_coding import _redis as sa_redis
 from app.agent.self_coding.post_write_validate import (
     mark_path_written,
     validate_content,
-    validate_written_paths,
 )
 from app.agent.self_coding.repo_view import (
     get_cached_or_fetch,
@@ -318,18 +317,6 @@ def _attempt_patch(
     mark_path_written(repo, branch, file_path)
 
     commit_sha = api_result.get("commit_sha", "")
-    ok, message = validate_written_paths([file_path])
-    if not ok:
-        logger.error("[SA3] post-write validation failed for %s: %s", file_path, message)
-        return {
-            "ok": False,
-            "file": file_path,
-            "commit_sha": commit_sha,
-            "new_blob_sha": api_result.get("new_blob_sha", ""),
-            "status": status,
-            "error": f"post-write validation failed: {message}",
-        }
-
     _record_task_progress(task_id, file_path, commit_sha)
     logger.info(
         "[SA3] patched %s:%d-%d on %s -> %s",

@@ -216,8 +216,13 @@ def get_dyno_hours_used() -> Dict[str, Any]:
         for entry in (usage_list if isinstance(usage_list, list) else []):
             if entry.get("app", {}).get("name", "") == app:
                 dh = entry.get("dyno_hours") or {}
-                # Heroku free/eco tier: 550h/month
-                quota = 550
+                # Heroku doesn't expose the dyno-hour quota via this API, and it
+                # varies by tier (free/eco = 550h/month). Make it configurable so
+                # paid tiers don't get false warnings; default to the eco quota.
+                try:
+                    quota = int(os.getenv("HEROKU_DYNO_HOURS_QUOTA", "550"))
+                except ValueError:
+                    quota = 550
                 used = sum(dh.values()) if isinstance(dh, dict) else 0
                 pct = round(used / quota * 100, 1) if quota else 0
                 return {
@@ -395,6 +400,10 @@ def analyze_build_logs(log_text: str) -> Dict[str, Any]:
     errors: List[Dict[str, str]] = []
 
     for pattern in _BUILD_ERROR_PATTERNS:
+        # The generic "build failed/failure" catch-all only fires when no more
+        # specific pattern matched — otherwise it just adds noise alongside them.
+        if pattern["code"] == "BUILD_FAILURE" and errors:
+            continue
         if re.search(pattern["regex"], log_text, re.IGNORECASE):
             errors.append(
                 {
@@ -416,15 +425,17 @@ def format_build_alert(build_status: Dict[str, Any], analysis: Dict[str, Any]) -
     """
     parts: List[str] = []
 
-    if build_status.get("status") == "error":
+    # `status` is the single source of truth: get_latest_build folds the GitHub
+    # `conclusion` into it (and uses "in_progress" while a run is still going).
+    state = build_status.get("status", "unknown")
+    if state == "error":
         parts.append(f"⚠️ *خطأ في جلب البناء:* {build_status.get('error')}")
         return "\n".join(parts)
 
-    conclusion = build_status.get("conclusion", "unknown")
     commit = build_status.get("commit", "?")[:7]
     branch = build_status.get("branch", "main")
 
-    if conclusion == "failure":
+    if state == "failure":
         parts.append(
             f"🔴 *نبيل، الـ Build فشل!*\n"
             f"Branch: `{branch}` | Commit: `{commit}`\n"
@@ -442,9 +453,9 @@ def format_build_alert(build_status: Dict[str, Any], analysis: Dict[str, Any]) -
         parts.append(f"\n🔗 [عرض الـ Logs]({build_status.get('logs_url')})")
         parts.append("\n*هل تريد اللحاق بـ push جديد؟*")
 
-    elif conclusion == "success":
+    elif state == "success":
         parts.append(f"✅ *البناء نجح!*\n" f"Branch: `{branch}` | Commit: `{commit}`")
     else:
-        parts.append(f"⏳ Build في حالة: {conclusion}")
+        parts.append(f"⏳ Build في حالة: {state}")
 
     return "\n".join(parts)

@@ -4,7 +4,7 @@ Sandy Cost Awareness Tool.
 كل provider يرجع:
   - credit_balance  : الرصيد المتبقي (credits/platform balance)
   - last_month_spent: سحب الشهر الماضي
-  - total_spent     : الإجمالي الكلي من بداية الاشتراك
+  - total_spent     : إجمالي آخر ~13 شهر (سقف Cost Explorer/الفواتير، مش من بداية الاشتراك)
 
 Env vars:
   AZURE_SUBSCRIPTION_ID, AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET
@@ -15,11 +15,15 @@ Env vars:
 
 from __future__ import annotations
 
+import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 _TIMEOUT = 15
 
@@ -135,8 +139,8 @@ def get_azure_cost() -> Dict[str, Any]:
                 if items:
                     bal = items[0].get("properties", {}).get("balanceSummary", {})
                     credit_balance = abs(float(bal.get("estimatedBalance", 0) or 0))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[CostTool] Azure credit balance lookup failed: %s", e)
 
         return _ok("Azure", credit_balance, last_month, total)
 
@@ -240,8 +244,8 @@ def get_heroku_cost() -> Dict[str, Any]:
                 credit_balance = sum(
                     abs(float(c.get("balance", 0) or 0)) / 100 for c in credits
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("[CostTool] Heroku credit balance lookup failed: %s", e)
 
         return _ok("Heroku", credit_balance, last_month, total)
 
@@ -334,7 +338,10 @@ def get_google_cost() -> Dict[str, Any]:
 
 
 def get_all_costs() -> List[Dict[str, Any]]:
-    return [get_azure_cost(), get_aws_cost(), get_heroku_cost(), get_google_cost()]
+    # Run providers concurrently so one slow/blocked API doesn't stack latency.
+    providers = [get_azure_cost, get_aws_cost, get_heroku_cost, get_google_cost]
+    with ThreadPoolExecutor(max_workers=len(providers)) as pool:
+        return list(pool.map(lambda fn: fn(), providers))
 
 
 # Formatting
@@ -382,10 +389,10 @@ def format_cost_report(costs: List[Dict[str, Any]]) -> str:
         if credit > 0:
             lines.append(f"┌ الرصيد المتبقي:    *${credit:,.2f}*")
             lines.append(f"├ سحب {prev_month_ar}:      *${last_month:,.2f}*")
-            lines.append(f"└ الإجمالي الكلي:    *${total:,.2f}*")
+            lines.append(f"└ إجمالي آخر ~13 شهر: *${total:,.2f}*")
         else:
             lines.append(f"┌ سحب {prev_month_ar}:      *${last_month:,.2f}*")
-            lines.append(f"└ الإجمالي الكلي:    *${total:,.2f}*")
+            lines.append(f"└ إجمالي آخر ~13 شهر: *${total:,.2f}*")
         lines.append("")
 
     if unavailable:
@@ -396,7 +403,7 @@ def format_cost_report(costs: List[Dict[str, Any]]) -> str:
 
     lines.append("━━━━━━━━━━━━━━━━━━━━━━")
     lines.append(f"📊 سحب {prev_month_ar} الكلي:  *${total_last_month:,.2f}*")
-    lines.append(f"📊 الإجمالي الكلي:       *${total_all:,.2f}*")
+    lines.append(f"📊 إجمالي آخر ~13 شهر:   *${total_all:,.2f}*")
     if total_credit > 0:
         lines.append(f"💳 إجمالي الرصيد:        *${total_credit:,.2f}*")
 

@@ -117,28 +117,40 @@ def bootstrap(app_env: str = "prod", app=None) -> None:
     try:
         from app.agent.facade.agent import mongo_db
         from app.agent.health_monitor import ensure_ttl_index
-        ensure_ttl_index(mongo_db)
+        try:
+            ensure_ttl_index(mongo_db)
+        except Exception as exc:
+            logger.warning("[Bootstrap] ensure_ttl_index failed: %s", exc)
         if mongo_db is not None:
-            mongo_db.web_chat_history.create_index(
-                "expire_at", expireAfterSeconds=0, background=True
-            )
-            mongo_db.sandy_session_state.create_index(
-                "chat_id", unique=True, background=True
-            )
-            mongo_db.sandy_evals.create_index(
-                [("chat_id", 1), ("created_at", -1)], background=True
-            )
-            mongo_db.guest_usage.create_index(
-                [("jti", 1), ("chat_type", 1)], unique=True, background=True
-            )
-            mongo_db.guest_usage.create_index(
-                "last_request_at", background=True
-            )
-            mongo_db.guest_usage.create_index(
-                "created_at", expireAfterSeconds=60 * 60 * 24 * 90, background=True
-            )
-    except Exception:
-        pass
+            # Each index is created independently so one failure doesn't silently
+            # skip the rest. (label, callable) pairs keep the logging cheap.
+            index_jobs = [
+                ("web_chat_history.expire_at", lambda: mongo_db.web_chat_history.create_index(
+                    "expire_at", expireAfterSeconds=0, background=True
+                )),
+                ("sandy_session_state.chat_id", lambda: mongo_db.sandy_session_state.create_index(
+                    "chat_id", unique=True, background=True
+                )),
+                ("sandy_evals.chat_id+created_at", lambda: mongo_db.sandy_evals.create_index(
+                    [("chat_id", 1), ("created_at", -1)], background=True
+                )),
+                ("guest_usage.jti+chat_type", lambda: mongo_db.guest_usage.create_index(
+                    [("jti", 1), ("chat_type", 1)], unique=True, background=True
+                )),
+                ("guest_usage.last_request_at", lambda: mongo_db.guest_usage.create_index(
+                    "last_request_at", background=True
+                )),
+                ("guest_usage.created_at_ttl", lambda: mongo_db.guest_usage.create_index(
+                    "created_at", expireAfterSeconds=60 * 60 * 24 * 90, background=True
+                )),
+            ]
+            for label, job in index_jobs:
+                try:
+                    job()
+                except Exception as exc:
+                    logger.warning("[Bootstrap] create_index %s failed: %s", label, exc)
+    except Exception as exc:
+        logger.warning("[Bootstrap] Mongo index setup failed: %s", exc)
 
     # Pre-warm the Redis STM singleton so the first voice turn doesn't pay
     # connection latency on the hot path. Best-effort: never abort bootstrap.

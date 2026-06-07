@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Dict, Optional
 
 from app.agent.executor.calendar_handlers import handle_calendar_action
@@ -5,6 +6,8 @@ from app.agent.executor.reminder_handlers import handle_reminder_action
 from app.agent.executor.task_handlers import handle_task_action
 import os
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 def capture_room_panorama() -> Optional[bytes]:
@@ -162,8 +165,9 @@ def execute_operational_action(
             )
 
             return {"handled": True, "reply": reply or "", "items": items}
-        except Exception as e:
-            return {"handled": False, "reply": f"⚠️ خطأ في تنفيذ البحث: {e}"}
+        except Exception:
+            logger.exception("research action failed (action_type=%s)", action_type)
+            return {"handled": False, "reply": "⚠️ صار خطأ وأنا بنفّذ البحث. جرّب مرة ثانية."}
 
     # Email: read, send, reply.
     if action_type == "email":
@@ -175,9 +179,6 @@ def execute_operational_action(
                 reply_to_email,
             )
             from app.agent.pending import create_pending_action as _make_pending
-            from app.utils.google_oauth_errors import (
-                user_message_for_google_auth_failure,
-            )
 
             ep = params or {}
             email_action = str(ep.get("action", "read") or "read").strip().lower()
@@ -287,6 +288,7 @@ def execute_operational_action(
 
             return {"handled": False, "reply": "أمر بريد غير مدعوم."}
         except Exception as e:
+            logger.exception("email action failed (action_type=%s)", action_type)
             try:
                 from app.utils.google_oauth_errors import (
                     user_message_for_google_auth_failure,
@@ -297,7 +299,7 @@ def execute_operational_action(
                     "reply": user_message_for_google_auth_failure(e),
                 }
             except Exception:
-                return {"handled": True, "reply": f"⚠️ خطأ في البريد: {e}"}
+                return {"handled": True, "reply": "⚠️ صار خطأ وأنا بتعامل مع البريد. جرّب مرة ثانية."}
 
     # Morning briefing.
     if action_type == "briefing":
@@ -322,8 +324,9 @@ def execute_operational_action(
                 "last_briefing_date"
             ]
             return {"handled": True, "reply": reply}
-        except Exception as e:
-            return {"handled": True, "reply": f"⚠️ خطأ في briefing: {e}"}
+        except Exception:
+            logger.exception("briefing action failed (action_type=%s)", action_type)
+            return {"handled": True, "reply": "⚠️ صار خطأ وأنا بجهّز الموجز. جرّب مرة ثانية."}
 
     # Hardware: talks to the device over HTTP long polling, plus the ESP32 camera.
     if action_type == "hardware":
@@ -386,8 +389,9 @@ def execute_operational_action(
                         snap, user_prompt,
                         create_chat_completion_fn=create_chat_completion_fn,
                     )
-                except Exception as e:
-                    description = f"[think] التقطت الصورة لكن صار خلل بالتحليل: {e}"
+                except Exception:
+                    logger.exception("hardware snapshot analysis failed")
+                    description = "التقطت الصورة لكن صار خلل بالتحليل."
 
                 # describe: نص فقط
                 if mode == "describe":
@@ -455,8 +459,9 @@ def execute_operational_action(
                 return {"handled": True, "reply": "تم ضبط طاقة الكاميرا."}
 
             return {"handled": False, "reply": "أمر أجهزة غير معروف."}
-        except Exception as e:
-            return {"handled": True, "reply": f"⚠️ خطأ في الهاردوير: {e}"}
+        except Exception:
+            logger.exception("hardware action failed (action_type=%s)", action_type)
+            return {"handled": True, "reply": "⚠️ صار خطأ وأنا بتعامل مع الهاردوير. جرّب مرة ثانية."}
 
     # Update the saved home city.
     if action_type == "update_location":
@@ -502,8 +507,9 @@ def execute_operational_action(
                 reply = format_places_for_reply(places)
                 return {"handled": True, "reply": reply, "items": places}
             return {"handled": True, "reply": f"ما لقيت أماكن تطابق '{query}'."}
-        except Exception as e:
-            return {"handled": True, "reply": f"⚠️ خطأ في البحث عن الأماكن: {e}"}
+        except Exception:
+            logger.exception("places action failed (action_type=%s)", action_type)
+            return {"handled": True, "reply": "⚠️ صار خطأ وأنا بدوّر عالأماكن. جرّب مرة ثانية."}
 
     # Image generation, via image_agent and the Replicate generator.
     if action_type == "image":
@@ -528,8 +534,9 @@ def execute_operational_action(
                 out["image_bytes"] = img_res.get("image_bytes")
                 out["caption"] = img_res.get("caption")
             return out
-        except Exception as e:
-            return {"handled": True, "reply": f"⚠️ خطأ في معالجة الصورة: {e}"}
+        except Exception:
+            logger.exception("image action failed (action_type=%s)", action_type)
+            return {"handled": True, "reply": "⚠️ صار خطأ وأنا بعالج الصورة. جرّب مرة ثانية."}
 
     # Image edit, on the active_image_bytes kept in the session.
     if action_type == "image_edit":
@@ -557,8 +564,9 @@ def execute_operational_action(
             image_state["active_image_bytes"] = edited_bytes
             image_state.setdefault("active_image", {})["action"] = "edited"
             return {"handled": True, "reply": "تفضلي، عدّلت الصورة.", "image_bytes": edited_bytes}
-        except Exception as e:
-            return {"handled": True, "reply": f"⚠️ خطأ في تعديل الصورة: {e}"}
+        except Exception:
+            logger.exception("image_edit action failed (action_type=%s)", action_type)
+            return {"handled": True, "reply": "⚠️ صار خطأ وأنا بعدّل الصورة. جرّب مرة ثانية."}
 
     # Current time and date.
     if action_type in {"time", "current_time", "get_time", "datetime"}:
@@ -596,8 +604,9 @@ def execute_operational_action(
                 }
             reply = format_weather_for_prompt(data)
             return {"handled": True, "reply": reply}
-        except Exception as e:
-            return {"handled": True, "reply": f"⚠️ خطأ في الحصول على الطقس: {e}"}
+        except Exception:
+            logger.exception("weather action failed (action_type=%s)", action_type)
+            return {"handled": True, "reply": "⚠️ صار خطأ وأنا بجيب الطقس. جرّب مرة ثانية."}
 
     return {"handled": False, "reply": ""}
 
@@ -649,8 +658,9 @@ def _handle_heroku_action(params: Dict[str, Any]) -> Dict[str, Any]:
 
     except EnvironmentError as e:
         return {"handled": True, "reply": f"⚠️ {e}"}
-    except Exception as e:
-        return {"handled": True, "reply": f"⚠️ خطأ في Heroku API: {e}"}
+    except Exception:
+        logger.exception("heroku action failed (action=%s)", action)
+        return {"handled": True, "reply": "⚠️ صار خطأ وأنا بتعامل مع Heroku API. جرّب مرة ثانية."}
 
 
 def _handle_cost_action(
@@ -680,5 +690,6 @@ def _handle_cost_action(
         reply = format_cost_report(costs)
         return {"handled": True, "reply": reply}
 
-    except Exception as e:
-        return {"handled": True, "reply": f"⚠️ خطأ في جلب بيانات الاستهلاك: {e}"}
+    except Exception:
+        logger.exception("cost action failed (provider=%s)", provider)
+        return {"handled": True, "reply": "⚠️ صار خطأ وأنا بجيب بيانات الاستهلاك. جرّب مرة ثانية."}

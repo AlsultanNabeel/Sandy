@@ -22,7 +22,7 @@ async def main():
         for i in range(3):
             t = time.perf_counter()
             await ws.send(CHUNK)
-            echo = await ws.recv()
+            echo = await asyncio.wait_for(ws.recv(), timeout=5)
             ms = (time.perf_counter() - t) * 1000
             match = echo == CHUNK
             print(f"  chunk {i+1}: {'OK' if match else 'MISMATCH'}, {ms:.0f}ms round-trip")

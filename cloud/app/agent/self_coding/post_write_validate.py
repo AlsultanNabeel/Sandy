@@ -26,7 +26,7 @@ import json
 import logging
 import threading
 import time
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -541,16 +541,3 @@ def _resolve_dotted(dotted: str, repo_files: Set[str]) -> Optional[str]:
         f"(looked for {candidates[0]} / {candidates[len(prefixes)]}). "
         "Forgot to create the module, or wrong path?"
     )
-
-
-def validate_written_paths(paths: Iterable[str]) -> Tuple[bool, str]:
-    """Deprecated post-write check, kept as a no-op for back-compat.
-
-    The previous implementation shelled out to a script that no longer
-    exists and validated worker-local files that didn't exist either.
-    Validation now happens in-process on the content **before** the
-    GitHub write (see `validate_content`), so by the time this is
-    reached the content has already passed.
-    """
-    _ = list(paths)  # exhaust the iterable in case the caller is one-shot
-    return True, ""

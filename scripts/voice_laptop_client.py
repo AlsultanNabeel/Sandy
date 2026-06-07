@@ -30,6 +30,7 @@ import json
 import os
 import queue
 import sys
+import threading
 import time
 
 IN_RATE = 16000   # مايك → السيرفر
@@ -61,7 +62,7 @@ async def _run(url: str) -> None:
 
     mic_q: "queue.Queue[bytes]" = queue.Queue()
     spk_buf = bytearray()
-    spk_lock = __import__("threading").Lock()
+    spk_lock = threading.Lock()
     hd = {"last_audio": 0.0}  # half-duplex: when we last got audio from Sandy
 
     def _mic_cb(indata, frames, t, status):  # noqa: ANN001
@@ -84,7 +85,9 @@ async def _run(url: str) -> None:
             reply = await asyncio.wait_for(ws.recv(), timeout=3)
             if isinstance(reply, str):
                 msg = json.loads(reply) if reply.startswith("{") else {"type": reply}
-                if msg.get("type") in ("error",):
+                # Only auth_ok means we're cleared to stream the mic. Anything
+                # else (error, or an unexpected shape) is a reject — bail.
+                if msg.get("type") != "auth_ok":
                     print(f"❌ المصافحة فشلت: {msg}")
                     return
                 print(f"✅ متّصل ({msg.get('type', reply)})")
@@ -200,8 +203,10 @@ async def _enroll(url: str, clips: int, seconds: float) -> None:
                 ack = await asyncio.wait_for(ws.recv(), timeout=5)
                 got = json.loads(ack).get("n", i) if ack.startswith("{") else i
                 print(f" ✅ ({got})")
-            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
-                print(" ✅")
+            except asyncio.TimeoutError:
+                print(" ✅ (بلا ack)")
+            except (json.JSONDecodeError, AttributeError) as e:
+                print(f" ✅ (ack غير مفهوم: {e})")
 
         await ws.send(json.dumps({"type": "enroll_done"}))
         try:

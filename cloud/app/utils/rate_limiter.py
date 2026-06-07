@@ -66,7 +66,10 @@ def is_rate_limited(chat_id: str | int) -> bool:
     if redis_result is not None:
         return redis_result
 
-    # Fallback: in-memory
+    # Fallback: in-memory.
+    # monotonic() (not time.time()) on purpose: this window is process-local and
+    # never compared against the Redis path's wall-clock scores, so a monotonic
+    # clock is immune to system time jumps (NTP/DST). The two paths never mix.
     now = time.monotonic()
     cutoff = now - _WINDOW_SECONDS
     with _lock:

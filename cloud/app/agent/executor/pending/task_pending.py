@@ -224,7 +224,7 @@ def _handle_clarify_task_choice(
             save_session_fn(session, session_file=session_file, mongo_db=mongo_db)
             return {
                 "handled": True,
-                "reply": "هاي المهمة فيها وقت/تذكير محفوظ. تعديل تاريخ المهام اللي فيها وقت مؤجل للمرحلة 6.6.3.",
+                "reply": "هاي المهمة فيها وقت/تذكير محفوظ. تعديل تاريخ هالمهام لسا مش جاهز.",
             }
         if not task_id or not due_iso:
             clear_pending_action(session)

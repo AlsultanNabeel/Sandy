@@ -3,6 +3,7 @@ from typing import Any, Dict
 from app.agent.pending import clear_pending_action
 
 
+# Explicit "send it" words — these alone are enough to fire a send.
 _EMAIL_SEND_WORDS = {
     "ارسل",
     "ارسله",
@@ -16,6 +17,10 @@ _EMAIL_SEND_WORDS = {
     "يلا ارسل",
     "ابعت",
     "ابعثه",
+}
+# Bare confirmations — only count as "send" when the pending is unambiguously at
+# the confirm step (so a stray "تمام" mid-edit doesn't fire a send).
+_EMAIL_CONFIRM_WORDS = {
     "اه",
     "أه",
     "نعم",
@@ -78,8 +83,18 @@ def _handle_email_confirm_pending(
     subject = str(pending.get("subject", "")).strip()
     body = str(pending.get("body", "")).strip()
 
+    # Bare confirmations ("اه/تمام/ok") only count as a send when the pending is
+    # unambiguously at the confirm step; otherwise we require an explicit send word.
+    at_confirm_step = (
+        str(pending.get("confirmation_status", "")).strip().lower() == "pending"
+    )
+    is_explicit_send = msg_l in _EMAIL_SEND_WORDS or any(
+        w in msg_l.split() for w in _EMAIL_SEND_WORDS
+    )
+    is_bare_confirm = at_confirm_step and msg_l in _EMAIL_CONFIRM_WORDS
+
     # ── ارسل مباشرة ─────────────────────────────────────────────────────────
-    if msg_l in _EMAIL_SEND_WORDS or "ارسل" in msg_l:
+    if is_explicit_send or is_bare_confirm:
         clear_pending_action(session)
         save_session_fn(session, session_file=session_file, mongo_db=mongo_db)
         try:

@@ -124,7 +124,10 @@ def extract_text(file_bytes: bytes, filename: str) -> tuple[str, str | None]:
 
     if ext == ".pdf":
         text, err = _read_pdf(file_bytes)
-    elif ext in (".docx", ".doc"):
+    elif ext == ".doc":
+        # python-docx can't read the legacy binary .doc format — only .docx.
+        return "", "صيغة .doc القديمة غير مدعومة — احفظ الملف كـ .docx وأعد إرساله."
+    elif ext == ".docx":
         text, err = _read_docx(file_bytes)
     elif ext == ".csv":
         text, err = _read_csv(file_bytes)

@@ -1,7 +1,11 @@
-"""Redis-backed Short-Term Memory (STM) for Sandy conversations.
+"""Redis connection holder for Sandy's Short-Term Memory (STM).
 
-Preserves last 10 messages across all platforms (Telegram, web, voice) with 30-day TTL.
-Used by router/specialist agents and response_node in LangGraph workflow.
+This module only owns the Redis connection (a singleton `RedisSTMClient` with an
+`enabled` flag) plus the shared STM constants (`MAX_STM_MESSAGES`, `STM_TTL`).
+The actual STM read/write logic lives in `app.agent.graph.graph` (`_stm_load` /
+`_stm_save`), which uses this connection to keep the last `MAX_STM_MESSAGES`
+messages per chat with `STM_TTL` expiry. If Redis is unavailable the graph layer
+falls back to in-memory history.
 """
 
 import logging
@@ -30,7 +34,7 @@ class RedisSTMClient:
         self.enabled = False
 
         if not REDIS_AVAILABLE:
-            logger.warning("redis-sdk not installed. STM will use in-memory fallback.")
+            logger.warning("redis package not installed. STM will use in-memory fallback.")
             return
 
         if not self.redis_url:

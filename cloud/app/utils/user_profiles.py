@@ -266,7 +266,17 @@ def extract_profile_name(message_text: str) -> str:
 
 def is_sensitive_request(message_text: str) -> bool:
     text = str(message_text or "").lower()
-    return any(keyword in text for keyword in SENSITIVE_KEYWORDS)
+    for keyword in SENSITIVE_KEYWORDS:
+        # Latin keywords (task/email/...) get word-boundary matching so they don't
+        # false-fire inside longer words. Arabic keywords keep substring matching:
+        # Arabic word boundaries are unreliable, and this is a safety gate where we
+        # deliberately err toward over-blocking guests.
+        if keyword.isascii():
+            if re.search(rf"\b{re.escape(keyword)}\b", text):
+                return True
+        elif keyword in text:
+            return True
+    return False
 
 
 def build_user_profile_prompt_sections(
@@ -305,4 +315,6 @@ def build_user_profile_prompt_sections(
 
 
 def is_sensitive_domain_request(message_text: str) -> bool:
+    # Public alias kept for callers (telegram_handlers, tests); the canonical
+    # implementation is is_sensitive_request.
     return is_sensitive_request(message_text)
