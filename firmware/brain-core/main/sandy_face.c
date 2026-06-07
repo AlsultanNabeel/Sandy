@@ -4,6 +4,7 @@
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_panel_ops.h"
+#include "esp_timer.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
 #include "driver/ledc.h"
@@ -46,7 +47,7 @@ static lv_point_t s_brow_l_pts[2], s_brow_r_pts[2];
 
 // ─── Mood descriptor ──────────────────────────────────────────────────────────
 typedef struct {
-    lv_color_t  bg;
+    uint32_t    bg;            // 0xRRGGBB, wrapped with lv_color_hex() at use
     int16_t     eye_h;          // eye height (squint effect)
     int16_t     eye_w;
     int16_t     brow_angle;     // degrees: + = inner up (angry), - = inner down (sad)
@@ -58,31 +59,31 @@ typedef struct {
 // Mouth angles: LVGL arcs go clockwise. 90°=bottom, 270°=top.
 // Smile: 210→330 (bottom half, ~120° arc). Frown: flip to 30→150 (top half).
 static const mood_desc_t MOODS[MOOD_COUNT] = {
-    [MOOD_IDLE]        = {.bg=lv_color_hex(0x0A0A1A),.eye_h=26,.eye_w=26,.brow_angle= 0,.mouth_start=210,.mouth_end=330,.mouth_frown=false},
-    [MOOD_HAPPY]       = {.bg=lv_color_hex(0x001A00),.eye_h=24,.eye_w=30,.brow_angle= 5,.mouth_start=200,.mouth_end=340,.mouth_frown=false},
-    [MOOD_BIG_HAPPY]   = {.bg=lv_color_hex(0x001A00),.eye_h=20,.eye_w=34,.brow_angle=10,.mouth_start=190,.mouth_end=350,.mouth_frown=false},
-    [MOOD_CURIOUS]     = {.bg=lv_color_hex(0x0A0A20),.eye_h=30,.eye_w=26,.brow_angle= 8,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
-    [MOOD_SAD]         = {.bg=lv_color_hex(0x0A0010),.eye_h=22,.eye_w=24,.brow_angle=-8,.mouth_start= 30,.mouth_end=150,.mouth_frown=true },
-    [MOOD_ALERT]       = {.bg=lv_color_hex(0x1A0500),.eye_h=32,.eye_w=32,.brow_angle= 2,.mouth_start=205,.mouth_end=335,.mouth_frown=false},
-    [MOOD_SURPRISED]   = {.bg=lv_color_hex(0x1A1000),.eye_h=36,.eye_w=36,.brow_angle=12,.mouth_start=205,.mouth_end=335,.mouth_frown=false},
-    [MOOD_FOCUSED]     = {.bg=lv_color_hex(0x001010),.eye_h=18,.eye_w=28,.brow_angle= 3,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
-    [MOOD_BORED]       = {.bg=lv_color_hex(0x0A0A0A),.eye_h=14,.eye_w=28,.brow_angle=-3,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
-    [MOOD_EXCITED]     = {.bg=lv_color_hex(0x10001A),.eye_h=30,.eye_w=32,.brow_angle=10,.mouth_start=195,.mouth_end=345,.mouth_frown=false},
-    [MOOD_LOVE]        = {.bg=lv_color_hex(0x1A0010),.eye_h=20,.eye_w=28,.brow_angle= 5,.mouth_start=200,.mouth_end=340,.mouth_frown=false},
-    [MOOD_ANGRY]       = {.bg=lv_color_hex(0x1A0000),.eye_h=18,.eye_w=26,.brow_angle=15,.mouth_start= 40,.mouth_end=140,.mouth_frown=true },
-    [MOOD_CONFUSED]    = {.bg=lv_color_hex(0x0A0A1A),.eye_h=26,.eye_w=26,.brow_angle=-5,.mouth_start=210,.mouth_end=330,.mouth_frown=false},
-    [MOOD_THINKING]    = {.bg=lv_color_hex(0x001010),.eye_h=20,.eye_w=24,.brow_angle= 6,.mouth_start=215,.mouth_end=315,.mouth_frown=false},
-    [MOOD_SLEEPY]      = {.bg=lv_color_hex(0x050510),.eye_h=10,.eye_w=28,.brow_angle=-2,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
-    [MOOD_SHY]         = {.bg=lv_color_hex(0x1A0A0A),.eye_h=22,.eye_w=24,.brow_angle= 4,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
-    [MOOD_PROUD]       = {.bg=lv_color_hex(0x000F1A),.eye_h=22,.eye_w=28,.brow_angle= 6,.mouth_start=205,.mouth_end=335,.mouth_frown=false},
-    [MOOD_WORRIED]     = {.bg=lv_color_hex(0x0A0A00),.eye_h=24,.eye_w=24,.brow_angle=-6,.mouth_start= 40,.mouth_end=140,.mouth_frown=true },
-    [MOOD_PLAYFUL]     = {.bg=lv_color_hex(0x001A10),.eye_h=24,.eye_w=30,.brow_angle= 8,.mouth_start=200,.mouth_end=340,.mouth_frown=false},
-    [MOOD_CALM]        = {.bg=lv_color_hex(0x001010),.eye_h=22,.eye_w=26,.brow_angle= 2,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
-    [MOOD_GRUMPY]      = {.bg=lv_color_hex(0x0F0500),.eye_h=16,.eye_w=26,.brow_angle=12,.mouth_start= 35,.mouth_end=145,.mouth_frown=true },
-    [MOOD_HOPEFUL]     = {.bg=lv_color_hex(0x001510),.eye_h=28,.eye_w=28,.brow_angle= 4,.mouth_start=205,.mouth_end=335,.mouth_frown=false},
-    [MOOD_GRATEFUL]    = {.bg=lv_color_hex(0x001000),.eye_h=22,.eye_w=28,.brow_angle= 5,.mouth_start=200,.mouth_end=340,.mouth_frown=false},
-    [MOOD_DISAPPOINTED]= {.bg=lv_color_hex(0x0A0A10),.eye_h=20,.eye_w=24,.brow_angle=-7,.mouth_start= 35,.mouth_end=145,.mouth_frown=true },
-    [MOOD_SILLY]       = {.bg=lv_color_hex(0x100A00),.eye_h=28,.eye_w=32,.brow_angle=10,.mouth_start=190,.mouth_end=350,.mouth_frown=false},
+    [MOOD_IDLE]        = {.bg=0x0A0A1A,.eye_h=26,.eye_w=26,.brow_angle= 0,.mouth_start=210,.mouth_end=330,.mouth_frown=false},
+    [MOOD_HAPPY]       = {.bg=0x001A00,.eye_h=24,.eye_w=30,.brow_angle= 5,.mouth_start=200,.mouth_end=340,.mouth_frown=false},
+    [MOOD_BIG_HAPPY]   = {.bg=0x001A00,.eye_h=20,.eye_w=34,.brow_angle=10,.mouth_start=190,.mouth_end=350,.mouth_frown=false},
+    [MOOD_CURIOUS]     = {.bg=0x0A0A20,.eye_h=30,.eye_w=26,.brow_angle= 8,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
+    [MOOD_SAD]         = {.bg=0x0A0010,.eye_h=22,.eye_w=24,.brow_angle=-8,.mouth_start= 30,.mouth_end=150,.mouth_frown=true },
+    [MOOD_ALERT]       = {.bg=0x1A0500,.eye_h=32,.eye_w=32,.brow_angle= 2,.mouth_start=205,.mouth_end=335,.mouth_frown=false},
+    [MOOD_SURPRISED]   = {.bg=0x1A1000,.eye_h=36,.eye_w=36,.brow_angle=12,.mouth_start=205,.mouth_end=335,.mouth_frown=false},
+    [MOOD_FOCUSED]     = {.bg=0x001010,.eye_h=18,.eye_w=28,.brow_angle= 3,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
+    [MOOD_BORED]       = {.bg=0x0A0A0A,.eye_h=14,.eye_w=28,.brow_angle=-3,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
+    [MOOD_EXCITED]     = {.bg=0x10001A,.eye_h=30,.eye_w=32,.brow_angle=10,.mouth_start=195,.mouth_end=345,.mouth_frown=false},
+    [MOOD_LOVE]        = {.bg=0x1A0010,.eye_h=20,.eye_w=28,.brow_angle= 5,.mouth_start=200,.mouth_end=340,.mouth_frown=false},
+    [MOOD_ANGRY]       = {.bg=0x1A0000,.eye_h=18,.eye_w=26,.brow_angle=15,.mouth_start= 40,.mouth_end=140,.mouth_frown=true },
+    [MOOD_CONFUSED]    = {.bg=0x0A0A1A,.eye_h=26,.eye_w=26,.brow_angle=-5,.mouth_start=210,.mouth_end=330,.mouth_frown=false},
+    [MOOD_THINKING]    = {.bg=0x001010,.eye_h=20,.eye_w=24,.brow_angle= 6,.mouth_start=215,.mouth_end=315,.mouth_frown=false},
+    [MOOD_SLEEPY]      = {.bg=0x050510,.eye_h=10,.eye_w=28,.brow_angle=-2,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
+    [MOOD_SHY]         = {.bg=0x1A0A0A,.eye_h=22,.eye_w=24,.brow_angle= 4,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
+    [MOOD_PROUD]       = {.bg=0x000F1A,.eye_h=22,.eye_w=28,.brow_angle= 6,.mouth_start=205,.mouth_end=335,.mouth_frown=false},
+    [MOOD_WORRIED]     = {.bg=0x0A0A00,.eye_h=24,.eye_w=24,.brow_angle=-6,.mouth_start= 40,.mouth_end=140,.mouth_frown=true },
+    [MOOD_PLAYFUL]     = {.bg=0x001A10,.eye_h=24,.eye_w=30,.brow_angle= 8,.mouth_start=200,.mouth_end=340,.mouth_frown=false},
+    [MOOD_CALM]        = {.bg=0x001010,.eye_h=22,.eye_w=26,.brow_angle= 2,.mouth_start=215,.mouth_end=325,.mouth_frown=false},
+    [MOOD_GRUMPY]      = {.bg=0x0F0500,.eye_h=16,.eye_w=26,.brow_angle=12,.mouth_start= 35,.mouth_end=145,.mouth_frown=true },
+    [MOOD_HOPEFUL]     = {.bg=0x001510,.eye_h=28,.eye_w=28,.brow_angle= 4,.mouth_start=205,.mouth_end=335,.mouth_frown=false},
+    [MOOD_GRATEFUL]    = {.bg=0x001000,.eye_h=22,.eye_w=28,.brow_angle= 5,.mouth_start=200,.mouth_end=340,.mouth_frown=false},
+    [MOOD_DISAPPOINTED]= {.bg=0x0A0A10,.eye_h=20,.eye_w=24,.brow_angle=-7,.mouth_start= 35,.mouth_end=145,.mouth_frown=true },
+    [MOOD_SILLY]       = {.bg=0x100A00,.eye_h=28,.eye_w=32,.brow_angle=10,.mouth_start=190,.mouth_end=350,.mouth_frown=false},
 };
 
 // ─── LVGL flush callback ──────────────────────────────────────────────────────
@@ -144,7 +145,7 @@ static void _apply_mood(sandy_mood_t mood) {
     vTaskDelay(pdMS_TO_TICKS(100));
 
     // Background colour
-    lv_obj_set_style_bg_color(s_bg, d->bg, 0);
+    lv_obj_set_style_bg_color(s_bg, lv_color_hex(d->bg), 0);
 
     // Eyes (ellipses centered at 80,120 and 160,120)
     lv_obj_set_size(s_eye_l, d->eye_w, d->eye_h);
@@ -294,7 +295,7 @@ static esp_err_t _lcd_init(void) {
     // ST7789 panel
     esp_lcd_panel_dev_config_t panel_cfg = {
         .reset_gpio_num = PIN_TFT_RST,
-        .rgb_endian     = LCD_RGB_ENDIAN_RGB,
+        .rgb_ele_order  = LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(io, &panel_cfg, &s_panel));

@@ -23,6 +23,9 @@ idf_component_register(
         nvs_flash
         driver
         esp_driver_i2s
+        esp_driver_gpio
+        esp_driver_ledc
+        esp_driver_spi
         esp_https_ota
         esp_netif
         esp_timer
@@ -30,7 +33,7 @@ idf_component_register(
         freertos
         app_update
         esp_adc
-        esp_task_wdt
+        esp_system
         esp_lcd
         lvgl
         esp_websocket_client

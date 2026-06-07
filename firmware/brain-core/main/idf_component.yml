@@ -2,3 +2,5 @@ dependencies:
   lvgl/lvgl: "~8.3.0"
   espressif/esp_lcd_ili9341: "*"
   espressif/esp_websocket_client: "^1.2.0"
+  # esp-mqtt moved out of core IDF into the registry in IDF 6.0.
+  espressif/mqtt: "*"
