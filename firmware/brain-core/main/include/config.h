@@ -81,3 +81,22 @@
 // ─── MQTT ─────────────────────────────────────────────────────────────────────
 #define MQTT_STATUS_INTERVAL_MS 5000
 #define MQTT_RECONNECT_MS       5000
+
+// ─── Voice: I2S digital mic (INMP441) ──────────────────────────────────────────
+// ⛏️ Verify these against your wiring once the board is assembled.
+#define PIN_I2S_MIC_SCK         5       // BCLK / SCK
+#define PIN_I2S_MIC_WS          6       // LRCL / WS
+#define PIN_I2S_MIC_SD          7       // DOUT (mic data into the S3)
+
+// ─── Voice: I2S amplifier + speaker (MAX98357) ──────────────────────────────────
+#define PIN_I2S_SPK_BCLK        9       // ⛏️
+#define PIN_I2S_SPK_LRC         10      // ⛏️
+#define PIN_I2S_SPK_DIN         11      // ⛏️ (data from the S3 into the amp)
+
+// Gemini Live: 16 kHz audio in, 24 kHz out.
+#define VOICE_IN_RATE           16000
+#define VOICE_OUT_RATE          24000
+// Down-shift for the 32-bit INMP441 sample; also acts as gain. Tune on hardware.
+#define VOICE_MIC_GAIN_SHIFT    14
+// Keep the mic muted this long after Sandy's last audio (avoids echo).
+#define VOICE_HALF_DUPLEX_TAIL_MS  400

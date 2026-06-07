@@ -12,6 +12,7 @@ idf_component_register(
         "sandy_mqtt.c"
         "sandy_ota.c"
         "sandy_face.c"
+        "sandy_voice.c"
     INCLUDE_DIRS
         "include"
         "."
@@ -21,6 +22,7 @@ idf_component_register(
         mqtt
         nvs_flash
         driver
+        esp_driver_i2s
         esp_https_ota
         esp_netif
         esp_timer
@@ -31,4 +33,7 @@ idf_component_register(
         esp_task_wdt
         esp_lcd
         lvgl
+        esp_websocket_client
+        esp-tls
+        mbedtls
 )

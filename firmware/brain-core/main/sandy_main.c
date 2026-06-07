@@ -14,6 +14,7 @@
 #include "sandy_face.h"
 #include "sandy_mqtt.h"
 #include "sandy_ota.h"
+#include "sandy_voice.h"
 
 static const char *TAG = "main";
 
@@ -39,6 +40,9 @@ void app_main(void) {
 
     // ── Network ───────────────────────────────────────────────────────────────
     ESP_ERROR_CHECK(mqtt_sandy_start());
+
+    // ── Voice link (waits for Wi-Fi, then connects to /voice) ───────────────────
+    ESP_ERROR_CHECK(voice_init());
 
     ESP_LOGI(TAG, "all systems go");
 

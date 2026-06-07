@@ -10,3 +10,9 @@
 #define MQTT_CLIENT_ID      "sandy-brain-s3"
 #define MQTT_USER           "YOUR_MQTT_USER"
 #define MQTT_PASS           "YOUR_MQTT_PASS"
+
+// Voice link to the cloud (/voice). The HMAC key must match the server's
+// SANDY_WS_HMAC_KEY config var.
+#define SANDY_VOICE_WS_URI  "wss://YOUR_APP.herokuapp.com/voice"
+#define SANDY_WS_HMAC_KEY   "YOUR_WS_HMAC_KEY"
+#define SANDY_DEVICE_ID     "sandy-brain-s3"
