@@ -23,6 +23,7 @@ static const char *TAG = "face";
 
 static esp_lcd_panel_handle_t s_panel   = NULL;
 static lv_disp_t             *s_disp   = NULL;
+static lv_disp_drv_t          s_drv;        // file-scope so the SPI done-callback can reach it
 static lv_disp_draw_buf_t     s_draw_buf;
 static lv_color_t              s_buf1[TFT_WIDTH * LCD_BUF_LINES];
 static lv_color_t              s_buf2[TFT_WIDTH * LCD_BUF_LINES];
@@ -282,12 +283,13 @@ static esp_err_t _lcd_init(void) {
     esp_lcd_panel_io_spi_config_t io_cfg = {
         .dc_gpio_num       = PIN_TFT_DC,
         .cs_gpio_num       = PIN_TFT_CS,
-        .pclk_hz           = 40 * 1000 * 1000,   // 40 MHz
+        .pclk_hz           = 10 * 1000 * 1000,   // 10 MHz — conservative for jumper wiring
         .lcd_cmd_bits      = 8,
         .lcd_param_bits    = 8,
         .spi_mode          = 0,
         .trans_queue_depth = 10,
         .on_color_trans_done = _on_flush_ready,
+        .user_ctx          = &s_drv,   // passed back to _on_flush_ready
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi(
         (esp_lcd_spi_bus_handle_t)SPI2_HOST, &io_cfg, &io));
@@ -313,14 +315,13 @@ static void _lvgl_init(void) {
     lv_init();
     lv_disp_draw_buf_init(&s_draw_buf, s_buf1, s_buf2, TFT_WIDTH * LCD_BUF_LINES);
 
-    static lv_disp_drv_t drv;
-    lv_disp_drv_init(&drv);
-    drv.hor_res    = TFT_WIDTH;
-    drv.ver_res    = TFT_HEIGHT;
-    drv.flush_cb   = _flush_cb;
-    drv.draw_buf   = &s_draw_buf;
-    drv.user_data  = &drv;
-    s_disp = lv_disp_drv_register(&drv);
+    lv_disp_drv_init(&s_drv);
+    s_drv.hor_res    = TFT_WIDTH;
+    s_drv.ver_res    = TFT_HEIGHT;
+    s_drv.flush_cb   = _flush_cb;
+    s_drv.draw_buf   = &s_draw_buf;
+    s_drv.user_data  = &s_drv;
+    s_disp = lv_disp_drv_register(&s_drv);
 
     // LVGL tick via esp_timer
     const esp_timer_create_args_t tick_args = {

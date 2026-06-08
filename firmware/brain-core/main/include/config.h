@@ -1,5 +1,21 @@
 #pragma once
 
+// ─── Feature flags (bring-up toggles) ──────────────────────────────────────────
+// 1 = subsystem enabled, 0 = skipped at boot. Bring the robot up one piece at a
+// time: leave only what you've wired set to 1, reflash, test, then enable the
+// next. WIFI gates the cloud parts (MQTT / OTA / voice) — they need it.
+#define ENABLE_WIFI     0
+#define ENABLE_FACE     1   // ST7789 display — testing this first
+#define ENABLE_SERVO    0
+#define ENABLE_BUZZER   0
+#define ENABLE_SENSOR   0
+#define ENABLE_MOTORS   0
+#define ENABLE_TOUCH    0
+#define ENABLE_MIC      0   // MAX9814 clap mic
+#define ENABLE_OTA      0   // needs WIFI
+#define ENABLE_MQTT     0   // needs WIFI
+#define ENABLE_VOICE    0   // needs WIFI
+
 // ─── GPIO Pins ────────────────────────────────────────────────────────────────
 // Mapped for the ESP32-S3-DevKitC-1 / N16R8 (verified against the board's
 // broken-out header). Reserved pins that are NOT used here:
@@ -40,7 +56,7 @@
 // stay clear of the PSRAM/strapping/USB pins above.
 #define PIN_TFT_MOSI            40
 #define PIN_TFT_SCLK            41
-#define PIN_TFT_CS              21
+#define PIN_TFT_CS              39
 #define PIN_TFT_DC              42
 #define PIN_TFT_RST             2
 #define PIN_TFT_BLK             1    // backlight PWM

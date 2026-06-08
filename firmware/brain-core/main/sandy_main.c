@@ -2,6 +2,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
+#include "config.h"
 #include "sandy_types.h"
 #include "sandy_nvs.h"
 #include "sandy_wifi.h"
@@ -26,23 +27,45 @@ void app_main(void) {
 
     // ── Core services ─────────────────────────────────────────────────────────
     ESP_ERROR_CHECK(nvs_sandy_init());
+#if ENABLE_WIFI
     ESP_ERROR_CHECK(wifi_sandy_start());
+#endif
 
     // ── Peripherals ───────────────────────────────────────────────────────────
+#if ENABLE_FACE
     ESP_ERROR_CHECK(face_init());
+#endif
+#if ENABLE_SERVO
     ESP_ERROR_CHECK(servo_init());
+#endif
+#if ENABLE_BUZZER
     ESP_ERROR_CHECK(buzzer_init());
+#endif
+#if ENABLE_SENSOR
     ESP_ERROR_CHECK(sensor_init());
+#endif
+#if ENABLE_MOTORS
     ESP_ERROR_CHECK(motors_init());
+#endif
+#if ENABLE_TOUCH
     ESP_ERROR_CHECK(touch_init());
+#endif
+#if ENABLE_MIC
     ESP_ERROR_CHECK(mic_init());
+#endif
+#if ENABLE_OTA
     ESP_ERROR_CHECK(ota_init());
+#endif
 
     // ── Network ───────────────────────────────────────────────────────────────
+#if ENABLE_MQTT
     ESP_ERROR_CHECK(mqtt_sandy_start());
+#endif
 
     // ── Voice link (waits for Wi-Fi, then connects to /voice) ───────────────────
+#if ENABLE_VOICE
     ESP_ERROR_CHECK(voice_init());
+#endif
 
     ESP_LOGI(TAG, "all systems go");
 
