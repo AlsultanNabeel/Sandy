@@ -13,6 +13,7 @@ idf_component_register(
         "sandy_ota.c"
         "sandy_face.c"
         "sandy_voice.c"
+        "sandy_ears.c"
     INCLUDE_DIRS
         "include"
         "."

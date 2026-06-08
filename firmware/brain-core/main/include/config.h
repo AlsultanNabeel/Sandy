@@ -12,6 +12,7 @@
 #define ENABLE_MOTORS   0
 #define ENABLE_TOUCH    0
 #define ENABLE_MIC      0   // MAX9814 clap mic
+#define ENABLE_EARS     1   // stereo INMP441 sound-direction sensing
 #define ENABLE_OTA      0   // needs WIFI
 #define ENABLE_MQTT     0   // needs WIFI
 #define ENABLE_VOICE    0   // needs WIFI

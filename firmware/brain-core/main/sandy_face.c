@@ -76,6 +76,8 @@ static lv_obj_t *s_blush_l, *s_blush_r;
 
 static volatile sandy_mood_t s_mood = MOOD_IDLE;
 static int16_t  s_eye_target_h = EYE_H;
+static int16_t  s_eye_l_x0, s_eye_r_x0;   // resting eye positions
+static int64_t  s_look_until_ms;          // hold gaze toward a sound until this time
 
 // ─── Mood → look ──────────────────────────────────────────────────────────────
 typedef enum { MO_NEUTRAL, MO_SMILE, MO_BIG_SMILE, MO_FROWN, MO_OPEN, MO_FLAT, MO_SMIRK } mouth_t;
@@ -201,6 +203,16 @@ static void anim_axis(lv_obj_t *o, lv_anim_exec_xcb_t cb, int32_t from, int32_t 
 }
 
 static void drift_timer_cb(lv_timer_t *t) {
+    // While a sound is being tracked, hold the gaze and skip random drift.
+    if ((esp_timer_get_time() / 1000) < s_look_until_ms) {
+        lv_timer_set_period(t, 150);
+        return;
+    }
+    // Glance just ended → bring the eyes back to centre.
+    if (lv_obj_get_x(s_eye_l) != s_eye_l_x0) {
+        anim_axis(s_eye_l, set_x_cb, lv_obj_get_x(s_eye_l), s_eye_l_x0, 250);
+        anim_axis(s_eye_r, set_x_cb, lv_obj_get_x(s_eye_r), s_eye_r_x0, 250);
+    }
     int dx = 5 - (int)(esp_random() % 11);   // -5..+5
     int dy = 3 - (int)(esp_random() % 7);    // -3..+3
     int ix = (EYE_W - IRIS_D) / 2 + dx;
@@ -210,6 +222,24 @@ static void drift_timer_cb(lv_timer_t *t) {
     anim_axis(s_iris_r, set_x_cb, lv_obj_get_x(s_iris_r), ix, 380);
     anim_axis(s_iris_r, set_y_cb, lv_obj_get_y(s_iris_r), iy, 380);
     lv_timer_set_period(t, 900 + (esp_random() % 1400));
+}
+
+// Glance toward a sound (called from the ears module, off the LVGL task).
+void face_look(int pan) {
+    if (pan < -100) pan = -100;
+    else if (pan > 100) pan = 100;
+    if (!s_mutex || xSemaphoreTake(s_mutex, pdMS_TO_TICKS(20)) != pdTRUE) return;
+
+    int eoff = pan * 16 / 100;                       // whole-eye slide
+    int ioff = pan * 6 / 100;                        // iris within the eye
+    anim_axis(s_eye_l, set_x_cb, lv_obj_get_x(s_eye_l), s_eye_l_x0 + eoff, 160);
+    anim_axis(s_eye_r, set_x_cb, lv_obj_get_x(s_eye_r), s_eye_r_x0 + eoff, 160);
+    int ix = (EYE_W - IRIS_D) / 2 + ioff;
+    anim_axis(s_iris_l, set_x_cb, lv_obj_get_x(s_iris_l), ix, 160);
+    anim_axis(s_iris_r, set_x_cb, lv_obj_get_x(s_iris_r), ix, 160);
+
+    s_look_until_ms = (esp_timer_get_time() / 1000) + 1000;
+    xSemaphoreGive(s_mutex);
 }
 
 // ─── Apply a mood ─────────────────────────────────────────────────────────────
@@ -327,6 +357,8 @@ static void build_face(void) {
     // Eyes
     s_eye_l = make_eye(cx - EYE_DX - EYE_W / 2);
     s_eye_r = make_eye(cx + EYE_DX - EYE_W / 2);
+    s_eye_l_x0 = cx - EYE_DX - EYE_W / 2;
+    s_eye_r_x0 = cx + EYE_DX - EYE_W / 2;
 
     // Iris (child of each eye) carries pupil + gloss and moves for "look-around"
     int ipos = (EYE_W - IRIS_D) / 2;

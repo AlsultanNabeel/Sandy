@@ -16,6 +16,7 @@
 #include "sandy_mqtt.h"
 #include "sandy_ota.h"
 #include "sandy_voice.h"
+#include "sandy_ears.h"
 
 static const char *TAG = "main";
 
@@ -52,6 +53,9 @@ void app_main(void) {
 #endif
 #if ENABLE_MIC
     ESP_ERROR_CHECK(mic_init());
+#endif
+#if ENABLE_EARS
+    ESP_ERROR_CHECK(ears_init());
 #endif
 #if ENABLE_OTA
     ESP_ERROR_CHECK(ota_init());
