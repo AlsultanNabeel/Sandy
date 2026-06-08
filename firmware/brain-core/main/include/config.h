@@ -1,45 +1,49 @@
 #pragma once
 
 // ─── GPIO Pins ────────────────────────────────────────────────────────────────
-// Kept from original Arduino firmware where S3 is compatible.
-// Pins marked ⛏️ need verification against your physical N16R8 board.
+// Mapped for the ESP32-S3-DevKitC-1 / N16R8 (verified against the board's
+// broken-out header). Reserved pins that are NOT used here:
+//   33-37  → Octal PSRAM on the N16R8 (35/36/37 are on the header but off-limits)
+//   0/3/45/46 → strapping pins
+//   43/44  → UART0 console (TX/RX)
+//   19/20  → native USB D-/D+
+//   48     → on-board RGB LED (PIN_W2812 below)
 
 // Servo (neck) — SG90 via LEDC PWM
-#define PIN_SERVO               19
+#define PIN_SERVO               16
 
 // HC-SR04 ultrasonic distance sensor
 #define PIN_SENSOR_TRIG         15
 #define PIN_SENSOR_ECHO         13
 
 // Buzzer — LEDC PWM
-#define PIN_BUZZER              27
+#define PIN_BUZZER              17
 
 // L298N motor driver
-#define PIN_MOTOR_IN1           32
-#define PIN_MOTOR_IN2           33
-#define PIN_MOTOR_IN3           25
-#define PIN_MOTOR_IN4           26
+#define PIN_MOTOR_IN1           18
+#define PIN_MOTOR_IN2           8
+#define PIN_MOTOR_IN3           12
+#define PIN_MOTOR_IN4           47
 
-// MAX9814 mic — ADC1 CH3 on ESP32-S3 (GPIO4)
-// ⛏️ Original was GPIO34 (ESP32 ADC only). S3 ADC1: GPIO1-10.
+// MAX9814 analog mic (clap detection) — ADC1 CH3 = GPIO4 on the S3.
+// Separate from the INMP441 voice mic below; this one only watches for claps.
 #define PIN_MIC_ADC             4
 #define MIC_ADC_CHANNEL         ADC_CHANNEL_3   // GPIO4 = ADC1_CH3 on S3
 
 // TTP223 capacitive touch
 #define PIN_TOUCH               14
 
-// W2812 RGB LED — built-in on N16R8 DevKitC
-// ⛏️ Commonly GPIO48 on N16R8; verify with your board silkscreen
+// WS2812 RGB LED — on-board on the DevKitC-1 N16R8 (GPIO48).
 #define PIN_W2812               48
 
-// ST7789 240×240 display — SPI2 (non-conflicting with other peripherals)
-// ⛏️ Adjust to match your wiring once board arrives
-#define PIN_TFT_MOSI            35
-#define PIN_TFT_SCLK            36
+// ST7789 240×240 display — SPI. Any GPIO works via the S3 GPIO matrix; these
+// stay clear of the PSRAM/strapping/USB pins above.
+#define PIN_TFT_MOSI            40
+#define PIN_TFT_SCLK            41
 #define PIN_TFT_CS              21
-#define PIN_TFT_DC              37
-#define PIN_TFT_RST             38
-#define PIN_TFT_BLK             39   // backlight PWM
+#define PIN_TFT_DC              42
+#define PIN_TFT_RST             2
+#define PIN_TFT_BLK             1    // backlight PWM
 #define TFT_WIDTH               240
 #define TFT_HEIGHT              240
 
@@ -83,15 +87,14 @@
 #define MQTT_RECONNECT_MS       5000
 
 // ─── Voice: I2S digital mic (INMP441) ──────────────────────────────────────────
-// ⛏️ Verify these against your wiring once the board is assembled.
 #define PIN_I2S_MIC_SCK         5       // BCLK / SCK
 #define PIN_I2S_MIC_WS          6       // LRCL / WS
 #define PIN_I2S_MIC_SD          7       // DOUT (mic data into the S3)
 
 // ─── Voice: I2S amplifier + speaker (MAX98357) ──────────────────────────────────
-#define PIN_I2S_SPK_BCLK        9       // ⛏️
-#define PIN_I2S_SPK_LRC         10      // ⛏️
-#define PIN_I2S_SPK_DIN         11      // ⛏️ (data from the S3 into the amp)
+#define PIN_I2S_SPK_BCLK        9       // BCLK
+#define PIN_I2S_SPK_LRC         10      // LRC / WS
+#define PIN_I2S_SPK_DIN         11      // DIN (data from the S3 into the amp)
 
 // Gemini Live: 16 kHz audio in, 24 kHz out.
 #define VOICE_IN_RATE           16000
