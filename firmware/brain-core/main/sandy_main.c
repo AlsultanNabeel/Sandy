@@ -18,6 +18,7 @@
 #include "sandy_voice.h"
 #include "sandy_ears.h"
 #include "sandy_spktest.h"
+#include "sandy_remote.h"
 
 static const char *TAG = "main";
 
@@ -42,6 +43,9 @@ void app_main(void) {
     ESP_ERROR_CHECK(nvs_sandy_init());
 #if ENABLE_WIFI
     ESP_ERROR_CHECK(wifi_sandy_start());
+#endif
+#if ENABLE_REMOTE
+    ESP_ERROR_CHECK(remote_init());   // OTA + remote log over WiFi
 #endif
 
     // ── Peripherals ───────────────────────────────────────────────────────────

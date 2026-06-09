@@ -15,6 +15,7 @@ idf_component_register(
         "sandy_voice.c"
         "sandy_ears.c"
         "sandy_spktest.c"
+        "sandy_remote.c"
     INCLUDE_DIRS
         "include"
         "."
@@ -29,6 +30,7 @@ idf_component_register(
         esp_driver_ledc
         esp_driver_spi
         esp_https_ota
+        esp_http_server
         esp_netif
         esp_timer
         log

@@ -4,7 +4,7 @@
 // 1 = subsystem enabled, 0 = skipped at boot. Bring the robot up one piece at a
 // time: leave only what you've wired set to 1, reflash, test, then enable the
 // next. WIFI gates the cloud parts (MQTT / OTA / voice) — they need it.
-#define ENABLE_WIFI     0
+#define ENABLE_WIFI     1
 #define ENABLE_FACE     1   // ST7789 display
 #define ENABLE_SERVO    1
 #define ENABLE_BUZZER   1
@@ -17,6 +17,7 @@
 #define ENABLE_MQTT     0   // needs WIFI
 #define ENABLE_VOICE    0   // needs WIFI
 #define ENABLE_SPK_TEST 0   // temporary: triple-beep to verify amp + speaker
+#define ENABLE_REMOTE   1   // cable-free dev: OTA upload + serial log over WiFi (needs WIFI)
 
 // ─── GPIO Pins ────────────────────────────────────────────────────────────────
 // Mapped for the ESP32-S3-DevKitC-1 / N16R8 (verified against the board's
