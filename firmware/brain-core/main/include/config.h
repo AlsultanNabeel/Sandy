@@ -16,6 +16,7 @@
 #define ENABLE_OTA      0   // needs WIFI
 #define ENABLE_MQTT     0   // needs WIFI
 #define ENABLE_VOICE    1   // needs WIFI
+#define ENABLE_WAKEWORD 1   // local WakeNet gate for the voice session (needs VOICE)
 #define ENABLE_SPK_TEST 0   // temporary: triple-beep to verify amp + speaker
 #define ENABLE_REMOTE   1   // cable-free dev: OTA upload + serial log over WiFi (needs WIFI)
 
@@ -124,3 +125,15 @@
 #define VOICE_MIC_GAIN_SHIFT    12
 // Keep the mic muted this long after Sandy's last audio (avoids echo).
 #define VOICE_HALF_DUPLEX_TAIL_MS  400
+
+// ─── Wake word (ESP-SR / WakeNet) ──────────────────────────────────────────────
+// Local, always-on keyword spotter that gates the cloud voice session: the
+// Gemini link only connects after the wake word and drops after silence, so we
+// don't pay for an open session while idle. Built-in model for now
+// (wn9_hiandy_tts2 "Hi Andy" — closest to "Sandy", set in sdkconfig.defaults);
+// a custom-trained "Sandy" model swaps in later without touching this code.
+// Close the session (disconnect Gemini) after this long with no speech.
+#define VOICE_SESSION_IDLE_MS      8000
+// Mic level (avg abs sample/frame) above which the user counts as still
+// talking, to hold the session open. Tune with the `diag mic=` log.
+#define VOICE_SESSION_VAD_LEVEL    500

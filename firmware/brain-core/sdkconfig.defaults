@@ -48,3 +48,9 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
 
 # LVGL — SPI panels need byte-swapped RGB565 (else blue renders as green)
 CONFIG_LV_COLOR_16_SWAP=y
+
+# ESP-SR wake word: only pack "Hi Andy" (wn9_hiandy_tts2) into the model
+# partition — closest built-in to "Sandy". NSN/VAD stay on WebRTC (no model
+# files), so the model partition holds just this one ~300KB wake word.
+# Swap for a custom-trained "Sandy" model later by changing this line.
+CONFIG_SR_WN_WN9_HIANDY_TTS2=y

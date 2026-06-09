@@ -37,6 +37,12 @@
 #include "mbedtls/md.h"
 #include "esp_heap_caps.h"
 
+#if ENABLE_WAKEWORD
+#include "esp_wn_iface.h"
+#include "esp_wn_models.h"
+#include "model_path.h"
+#endif
+
 #include "sandy_wifi.h"
 
 static const char *TAG = "voice";
@@ -47,6 +53,23 @@ static i2s_chan_handle_t s_tx_chan;   // MAX98357 amp
 static StreamBufferHandle_t s_spk_stream;   // server audio waiting to play
 static volatile bool s_authed;
 static volatile int64_t s_last_rx_audio_ms;  // last time we got Sandy's audio
+static volatile bool s_playing;              // true only while actively playing audio
+
+#if ENABLE_WAKEWORD
+// Session is OPEN only between a wake word and the following silence. The WS
+// (and so the paid Gemini link) is connected only while it's open.
+static volatile bool s_session_active;       // WS up + mic streaming
+static volatile bool s_wake_req;             // wake heard; manager should open
+static volatile int64_t s_session_voice_ms;  // last user/Sandy activity while open
+
+static const esp_wn_iface_t *s_wn;
+static model_iface_data_t *s_wn_data;
+static int s_wn_chunk;                        // samples per detect() call
+static int16_t *s_wn_buf;                     // accumulates mic to chunk size
+static int s_wn_fill;                         // samples currently in s_wn_buf
+#else
+static const bool s_session_active = true;    // no gate: always streaming
+#endif
 
 // ~100 ms frames at 16 kHz keep WebSocket overhead low without adding latency.
 #define MIC_FRAME_SAMPLES   1600
@@ -211,18 +234,29 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *even
 static void spk_task(void *arg) {
     uint8_t buf[SPK_CHUNK_BYTES];
     bool playing = false;
+    int64_t first_seen = 0;   // when data first appeared while idle
     for (;;) {
         if (!playing) {
-            // Build a small cushion before starting so the opening of each reply
-            // doesn't stutter while audio is still arriving.
-            if (xStreamBufferBytesAvailable(s_spk_stream) < SPK_PREBUF_BYTES) {
+            size_t avail = xStreamBufferBytesAvailable(s_spk_stream);
+            if (avail == 0) {
+                first_seen = 0;
+                s_playing = false;
                 vTaskDelay(pdMS_TO_TICKS(8));
                 continue;
             }
-            playing = true;
+            if (first_seen == 0) first_seen = now_ms();
+            // Start once we have a cushion — or after 150ms even if it's a short
+            // reply, so a small chunk never gets stuck unplayed (which would
+            // keep the mic muted forever via half-duplex).
+            if (avail >= SPK_PREBUF_BYTES || (now_ms() - first_seen) > 150) {
+                playing = true;
+                s_playing = true;
+            } else {
+                vTaskDelay(pdMS_TO_TICKS(8));
+                continue;
+            }
         }
-        // 300ms tolerance: brief mid-reply WiFi gaps don't re-arm the cushion;
-        // only a real end-of-reply silence does.
+        // 300ms tolerance: brief mid-reply WiFi gaps don't re-arm the cushion.
         size_t n = xStreamBufferReceive(s_spk_stream, buf, sizeof(buf), pdMS_TO_TICKS(300));
         if (n) {
 #if SPK_VOL_SHIFT
@@ -233,9 +267,58 @@ static void spk_task(void *arg) {
             i2s_channel_write(s_tx_chan, buf, n, &written, portMAX_DELAY);
         } else {
             playing = false;
+            s_playing = false;
+            first_seen = 0;
         }
     }
 }
+
+#if ENABLE_WAKEWORD
+// Load the WakeNet model packed into the "model" flash partition. Returns false
+// if no model is present (caller then falls back to an always-on session).
+static bool wakeword_init(void) {
+    srmodel_list_t *models = esp_srmodel_init("model");
+    if (!models || models->num <= 0) {
+        ESP_LOGW(TAG, "no models in 'model' partition");
+        return false;
+    }
+    char *name = esp_srmodel_filter(models, ESP_WN_PREFIX, NULL);
+    if (!name) {
+        ESP_LOGW(TAG, "no wakenet model found");
+        return false;
+    }
+    s_wn = esp_wn_handle_from_name(name);
+    s_wn_data = s_wn->create(name, DET_MODE_90);
+    s_wn_chunk = s_wn->get_samp_chunksize(s_wn_data);
+    s_wn_buf = malloc(s_wn_chunk * sizeof(int16_t));
+    s_wn_fill = 0;
+    ESP_LOGI(TAG, "wakenet '%s' ready (word='%s', chunk=%d, rate=%d)",
+             name, esp_wn_wakeword_from_name(name), s_wn_chunk,
+             s_wn->get_samp_rate(s_wn_data));
+    return s_wn_buf != NULL;
+}
+
+// Feed mono 16-bit PCM in arbitrary lengths; WakeNet needs exact-chunk feeds, so
+// we buffer up to s_wn_chunk and detect on each full chunk. Returns true if the
+// wake word fired in this call.
+static bool wakeword_feed(const int16_t *pcm, int n) {
+    if (!s_wn) return false;
+    bool hit = false;
+    int i = 0;
+    while (i < n) {
+        int take = s_wn_chunk - s_wn_fill;
+        if (take > n - i) take = n - i;
+        memcpy(s_wn_buf + s_wn_fill, pcm + i, take * sizeof(int16_t));
+        s_wn_fill += take;
+        i += take;
+        if (s_wn_fill == s_wn_chunk) {
+            if (s_wn->detect(s_wn_data, s_wn_buf) == WAKENET_DETECTED) hit = true;
+            s_wn_fill = 0;
+        }
+    }
+    return hit;
+}
+#endif  // ENABLE_WAKEWORD
 
 // Read the mic, convert to 16-bit PCM, and stream it up while Sandy is quiet.
 static void mic_task(void *arg) {
@@ -251,6 +334,7 @@ static void mic_task(void *arg) {
     // One-pole DC blocker (high-pass): removes the INMP441's constant offset so
     // VAD sees real silence between words. y[n] = x[n] - x[n-1] + R*y[n-1].
     int32_t dc_x1 = 0, dc_y1 = 0;
+    int64_t last_diag = 0;
 
     for (;;) {
         size_t bytes_read = 0;
@@ -262,6 +346,7 @@ static void mic_task(void *arg) {
 
         // INMP441 gives 24-bit data left-justified in a 32-bit slot. Mix the two
         // mics, shift down to 16-bit (+gain), then DC-block.
+        int64_t sum_abs = 0;
         for (int i = 0; i < frames; i++) {
             int32_t l = raw[2 * i]     >> VOICE_MIC_GAIN_SHIFT;
             int32_t r = raw[2 * i + 1] >> VOICE_MIC_GAIN_SHIFT;
@@ -274,15 +359,53 @@ static void mic_task(void *arg) {
             if (y > 32767) y = 32767;
             else if (y < -32768) y = -32768;
             pcm[i] = (int16_t)y;
+            sum_abs += (y < 0) ? -y : y;
         }
 
-        // Half-duplex: skip the mic while Sandy's audio is playing or just ended.
-        bool sandy_talking = !xStreamBufferIsEmpty(s_spk_stream) ||
+        int avg = (int)(sum_abs / (frames ? frames : 1));
+
+        // Half-duplex: mute the mic only while we're ACTUALLY playing Sandy's
+        // audio (plus a short tail), not merely when the buffer is non-empty —
+        // a stuck buffered chunk used to mute the mic forever.
+        bool sandy_talking = s_playing ||
                              (now_ms() - s_last_rx_audio_ms) < VOICE_HALF_DUPLEX_TAIL_MS;
 
+#if ENABLE_WAKEWORD
+        if (!s_session_active) {
+            // Idle: listen locally for the wake word, stream nothing up. The
+            // session manager opens the WS when it sees s_wake_req.
+            if (!sandy_talking && wakeword_feed(pcm, frames)) {
+                ESP_LOGI(TAG, "wake word detected");
+                s_wake_req = true;
+            }
+        } else {
+            // Open session: hold it alive on user speech or Sandy's own audio;
+            // the manager closes it once this goes quiet for VOICE_SESSION_IDLE_MS.
+            if (avg > VOICE_SESSION_VAD_LEVEL || sandy_talking) {
+                s_session_voice_ms = now_ms();
+            }
+            if (s_authed && !sandy_talking) {
+                esp_websocket_client_send_bin(s_client, (const char *)pcm,
+                                              frames * sizeof(int16_t), portMAX_DELAY);
+            }
+        }
+#else
         if (s_authed && !sandy_talking) {
             esp_websocket_client_send_bin(s_client, (const char *)pcm,
                                           frames * sizeof(int16_t), portMAX_DELAY);
+        }
+#endif
+
+        int64_t t = now_ms();
+        if (t - last_diag > 1500) {
+            last_diag = t;
+#if ENABLE_WAKEWORD
+            ESP_LOGI(TAG, "diag mic=%d session=%d authed=%d talking=%d",
+                     avg, (int)s_session_active, (int)s_authed, (int)sandy_talking);
+#else
+            ESP_LOGI(TAG, "diag mic=%d authed=%d playing=%d talking=%d",
+                     avg, (int)s_authed, (int)s_playing, (int)sandy_talking);
+#endif
         }
     }
 }
@@ -313,14 +436,46 @@ static void voice_task(void *arg) {
     };
     s_client = esp_websocket_client_init(&cfg);
     esp_websocket_register_events(s_client, WEBSOCKET_EVENT_ANY, on_ws_event, NULL);
-    esp_websocket_client_start(s_client);
 
     // Pin the audio tasks to core 1 (WiFi/TLS runs on core 0) and give playback
     // the higher priority so Sandy's voice never gets starved → no stutter.
     xTaskCreatePinnedToCore(spk_task, "voice_spk", 4096, NULL, 9, NULL, 1);
     xTaskCreatePinnedToCore(mic_task, "voice_mic", 4096, NULL, 8, NULL, 1);
 
+#if ENABLE_WAKEWORD
+    if (!wakeword_init()) {
+        // No model packed — fall back to an always-on session so voice still
+        // works; just without the cost gate.
+        ESP_LOGW(TAG, "wake word unavailable; voice stays always-on");
+        s_session_active = true;
+        esp_websocket_client_start(s_client);
+        vTaskDelete(NULL);
+        return;
+    }
+
+    // Session manager: the paid Gemini link is connected ONLY between a wake
+    // word and the silence that follows it.
+    for (;;) {
+        if (!s_session_active) {
+            if (s_wake_req) {
+                s_wake_req = false;
+                ESP_LOGI(TAG, "opening voice session");
+                s_session_voice_ms = now_ms();
+                s_session_active = true;
+                esp_websocket_client_start(s_client);
+            }
+        } else if ((now_ms() - s_session_voice_ms) > VOICE_SESSION_IDLE_MS && !s_playing) {
+            ESP_LOGI(TAG, "session idle, closing");
+            s_session_active = false;
+            s_authed = false;
+            esp_websocket_client_stop(s_client);
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+#else
+    esp_websocket_client_start(s_client);
     vTaskDelete(NULL);  // setup done; the audio tasks carry on
+#endif
 }
 
 esp_err_t voice_init(void) {

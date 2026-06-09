@@ -43,4 +43,5 @@ idf_component_register(
         esp_websocket_client
         esp-tls
         mbedtls
+        esp-sr
 )
