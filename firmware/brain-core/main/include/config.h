@@ -12,10 +12,10 @@
 #define ENABLE_MOTORS   0
 #define ENABLE_TOUCH    0
 #define ENABLE_MIC      0   // MAX9814 clap mic
-#define ENABLE_EARS     1   // stereo INMP441 sound-direction sensing
+#define ENABLE_EARS     0   // stereo sound-direction (temp off; merging into VOICE next)
 #define ENABLE_OTA      0   // needs WIFI
 #define ENABLE_MQTT     0   // needs WIFI
-#define ENABLE_VOICE    0   // needs WIFI
+#define ENABLE_VOICE    1   // needs WIFI
 #define ENABLE_SPK_TEST 0   // temporary: triple-beep to verify amp + speaker
 #define ENABLE_REMOTE   1   // cable-free dev: OTA upload + serial log over WiFi (needs WIFI)
 

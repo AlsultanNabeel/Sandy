@@ -58,16 +58,28 @@ static int64_t now_ms(void) {
     return (int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
-// Wait (briefly) for SNTP so the hello timestamp is within the server's 30s
-// replay window. We still try the handshake even if it times out.
+// True once the wall clock is real (post-2023), i.e. SNTP has set it.
+static bool clock_is_set(void) {
+    return time(NULL) > 1700000000;  // ~2023-11
+}
+
+// Block until SNTP sets the clock — the hello timestamp must land inside the
+// server's 30s replay window, so connecting with a 1970 clock just gets us
+// rejected. Wait up to ~60s; if it never syncs we proceed anyway and rely on
+// the websocket's auto-reconnect to retry once the clock catches up.
 static void sync_clock(void) {
     esp_sntp_config_t cfg = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
     if (esp_netif_sntp_init(&cfg) != ESP_OK) {
         ESP_LOGW(TAG, "sntp init failed");
         return;
     }
-    if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(10000)) != ESP_OK) {
-        ESP_LOGW(TAG, "sntp not synced yet, hello ts may be rejected");
+    for (int i = 0; i < 60 && !clock_is_set(); i++) {
+        esp_netif_sntp_sync_wait(pdMS_TO_TICKS(1000));
+    }
+    if (clock_is_set()) {
+        ESP_LOGI(TAG, "clock synced");
+    } else {
+        ESP_LOGW(TAG, "clock not synced after wait; hello may be rejected");
     }
 }
 
