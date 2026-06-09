@@ -119,6 +119,8 @@
 #define VOICE_IN_RATE           16000
 #define VOICE_OUT_RATE          24000
 // Down-shift for the 32-bit INMP441 sample; also acts as gain. Tune on hardware.
-#define VOICE_MIC_GAIN_SHIFT    14
+// 12 (≈+12 dB over 14) so normal speech reaches Gemini's voice-activity
+// threshold from a comfortable distance.
+#define VOICE_MIC_GAIN_SHIFT    12
 // Keep the mic muted this long after Sandy's last audio (avoids echo).
 #define VOICE_HALF_DUPLEX_TAIL_MS  400

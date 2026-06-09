@@ -35,6 +35,7 @@
 #include "esp_netif_sntp.h"
 #include "driver/i2s_std.h"
 #include "mbedtls/md.h"
+#include "esp_heap_caps.h"
 
 #include "sandy_wifi.h"
 
@@ -49,7 +50,13 @@ static volatile int64_t s_last_rx_audio_ms;  // last time we got Sandy's audio
 
 // ~100 ms frames at 16 kHz keep WebSocket overhead low without adding latency.
 #define MIC_FRAME_SAMPLES   1600
-#define SPK_CHUNK_BYTES     1920   // ~40 ms at 24 kHz / 16-bit
+#define SPK_CHUNK_BYTES     1920    // ~40 ms at 24 kHz / 16-bit
+// Jitter buffer: hold this much before starting playback so uneven WiFi
+// delivery doesn't underrun the I2S and make Sandy's voice stutter.
+// 24 kHz · 16-bit = 48000 B/s, so 7200 B ≈ 150 ms.
+#define SPK_PREBUF_BYTES    7200
+// Output volume: right-shift each sample. 2 = quarter, 1 = half, 0 = full.
+#define SPK_VOL_SHIFT       2
 
 
 static int64_t now_ms(void) {
@@ -109,13 +116,16 @@ static int build_hello(char *out, size_t out_len) {
 
 
 static esp_err_t i2s_start(void) {
-    // Mic: INMP441 on I2S_NUM_0, RX only, 32-bit slot (24-bit data, left-justified).
+    // Mic: two INMP441 on I2S_NUM_0, RX only, 32-bit STEREO (one mic per slot).
+    // We read both slots — same as the proven sound-direction path — then mix
+    // them down to mono for the cloud. Mono mode here read the wrong/empty slot
+    // and only picked up a constant noise floor.
     i2s_chan_config_t rx_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
     ESP_ERROR_CHECK(i2s_new_channel(&rx_cfg, NULL, &s_rx_chan));
     i2s_std_config_t rx_std = {
         .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(VOICE_IN_RATE),
         .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT,
-                                                        I2S_SLOT_MODE_MONO),
+                                                        I2S_SLOT_MODE_STEREO),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
             .bclk = PIN_I2S_MIC_SCK,
@@ -200,18 +210,37 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *even
 // idles when there's nothing to play.
 static void spk_task(void *arg) {
     uint8_t buf[SPK_CHUNK_BYTES];
+    bool playing = false;
     for (;;) {
-        size_t n = xStreamBufferReceive(s_spk_stream, buf, sizeof(buf), pdMS_TO_TICKS(100));
+        if (!playing) {
+            // Build a small cushion before starting so the opening of each reply
+            // doesn't stutter while audio is still arriving.
+            if (xStreamBufferBytesAvailable(s_spk_stream) < SPK_PREBUF_BYTES) {
+                vTaskDelay(pdMS_TO_TICKS(8));
+                continue;
+            }
+            playing = true;
+        }
+        // 300ms tolerance: brief mid-reply WiFi gaps don't re-arm the cushion;
+        // only a real end-of-reply silence does.
+        size_t n = xStreamBufferReceive(s_spk_stream, buf, sizeof(buf), pdMS_TO_TICKS(300));
         if (n) {
+#if SPK_VOL_SHIFT
+            int16_t *s = (int16_t *)buf;
+            for (int i = 0; i < (int)(n / sizeof(int16_t)); i++) s[i] >>= SPK_VOL_SHIFT;
+#endif
             size_t written = 0;
             i2s_channel_write(s_tx_chan, buf, n, &written, portMAX_DELAY);
+        } else {
+            playing = false;
         }
     }
 }
 
 // Read the mic, convert to 16-bit PCM, and stream it up while Sandy is quiet.
 static void mic_task(void *arg) {
-    int32_t *raw = malloc(MIC_FRAME_SAMPLES * sizeof(int32_t));
+    // Stereo read: 2 int32 slots per frame. pcm holds the mono mix.
+    int32_t *raw = malloc(MIC_FRAME_SAMPLES * 2 * sizeof(int32_t));
     int16_t *pcm = malloc(MIC_FRAME_SAMPLES * sizeof(int16_t));
     if (!raw || !pcm) {
         ESP_LOGE(TAG, "mic buffers alloc failed");
@@ -219,21 +248,32 @@ static void mic_task(void *arg) {
         return;
     }
 
+    // One-pole DC blocker (high-pass): removes the INMP441's constant offset so
+    // VAD sees real silence between words. y[n] = x[n] - x[n-1] + R*y[n-1].
+    int32_t dc_x1 = 0, dc_y1 = 0;
+
     for (;;) {
         size_t bytes_read = 0;
-        if (i2s_channel_read(s_rx_chan, raw, MIC_FRAME_SAMPLES * sizeof(int32_t),
+        if (i2s_channel_read(s_rx_chan, raw, MIC_FRAME_SAMPLES * 2 * sizeof(int32_t),
                              &bytes_read, portMAX_DELAY) != ESP_OK) {
             continue;
         }
-        int samples = bytes_read / sizeof(int32_t);
+        int frames = bytes_read / (2 * sizeof(int32_t));
 
-        // INMP441 gives 24-bit data left-justified in a 32-bit slot. The shift
-        // both down-converts to 16-bit and adds gain; tune it on hardware.
-        for (int i = 0; i < samples; i++) {
-            int32_t v = raw[i] >> VOICE_MIC_GAIN_SHIFT;
-            if (v > 32767) v = 32767;
-            else if (v < -32768) v = -32768;
-            pcm[i] = (int16_t)v;
+        // INMP441 gives 24-bit data left-justified in a 32-bit slot. Mix the two
+        // mics, shift down to 16-bit (+gain), then DC-block.
+        for (int i = 0; i < frames; i++) {
+            int32_t l = raw[2 * i]     >> VOICE_MIC_GAIN_SHIFT;
+            int32_t r = raw[2 * i + 1] >> VOICE_MIC_GAIN_SHIFT;
+            int32_t x = (l + r) / 2;
+
+            int32_t y = x - dc_x1 + (dc_y1 - (dc_y1 >> 6));  // R ≈ 0.984
+            dc_x1 = x;
+            dc_y1 = y;
+
+            if (y > 32767) y = 32767;
+            else if (y < -32768) y = -32768;
+            pcm[i] = (int16_t)y;
         }
 
         // Half-duplex: skip the mic while Sandy's audio is playing or just ended.
@@ -242,7 +282,7 @@ static void mic_task(void *arg) {
 
         if (s_authed && !sandy_talking) {
             esp_websocket_client_send_bin(s_client, (const char *)pcm,
-                                          samples * sizeof(int16_t), portMAX_DELAY);
+                                          frames * sizeof(int16_t), portMAX_DELAY);
         }
     }
 }
@@ -260,7 +300,9 @@ static void voice_task(void *arg) {
         return;
     }
 
-    s_spk_stream = xStreamBufferCreate(32 * 1024, 1);
+    // Big buffer in PSRAM so a fast burst of Sandy's reply isn't dropped (the
+    // old 32 KB internal buffer overflowed and chopped her audio).
+    s_spk_stream = xStreamBufferCreateWithCaps(192 * 1024, 1, MALLOC_CAP_SPIRAM);
 
     esp_websocket_client_config_t cfg = {
         .uri = SANDY_VOICE_WS_URI,
@@ -273,8 +315,10 @@ static void voice_task(void *arg) {
     esp_websocket_register_events(s_client, WEBSOCKET_EVENT_ANY, on_ws_event, NULL);
     esp_websocket_client_start(s_client);
 
-    xTaskCreate(spk_task, "voice_spk", 4096, NULL, 6, NULL);
-    xTaskCreate(mic_task, "voice_mic", 4096, NULL, 6, NULL);
+    // Pin the audio tasks to core 1 (WiFi/TLS runs on core 0) and give playback
+    // the higher priority so Sandy's voice never gets starved → no stutter.
+    xTaskCreatePinnedToCore(spk_task, "voice_spk", 4096, NULL, 9, NULL, 1);
+    xTaskCreatePinnedToCore(mic_task, "voice_mic", 4096, NULL, 8, NULL, 1);
 
     vTaskDelete(NULL);  // setup done; the audio tasks carry on
 }
