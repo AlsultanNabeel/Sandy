@@ -23,32 +23,12 @@ static const char *TAG = "main";
 // Global mood state — written by MQTT/touch/mic, read by face/buzzer
 volatile sandy_mood_t g_current_mood = MOOD_IDLE;
 
-#if HW_SELFTEST
-// Exercises whichever peripherals are enabled so we can verify wiring:
-// a boot beep, a couple of servo sweeps, then a continuous distance readout.
-static void _selftest_task(void *arg) {
-    vTaskDelay(pdMS_TO_TICKS(700));
-#if ENABLE_BUZZER
-    ESP_LOGI(TAG, "selftest: buzzer beep");
-    buzzer_play(MELODY_BOOT);
-#endif
-#if ENABLE_SERVO
-    ESP_LOGI(TAG, "selftest: servo sweep");
-    for (int i = 0; i < 2; i++) {
-        servo_set_angle(45);  vTaskDelay(pdMS_TO_TICKS(500));
-        servo_set_angle(135); vTaskDelay(pdMS_TO_TICKS(500));
-    }
-    servo_set_angle(90);
-#endif
+#if ENABLE_SENSOR && ENABLE_FACE
+// Permanent behaviour: when something comes close, Sandy looks surprised.
+static void _proximity_task(void *arg) {
     for (;;) {
-#if ENABLE_SENSOR
         uint32_t d = sensor_get_distance_cm();
-        ESP_LOGI(TAG, "selftest: distance = %lu cm", (unsigned long)d);
-#if ENABLE_FACE
-        // Visible test without a laptop: something near → surprised face.
         face_set_mood((d > 0 && d < 25) ? MOOD_SURPRISED : MOOD_IDLE);
-#endif
-#endif
         vTaskDelay(pdMS_TO_TICKS(300));
     }
 }
@@ -104,8 +84,13 @@ void app_main(void) {
 
     ESP_LOGI(TAG, "all systems go");
 
-#if HW_SELFTEST
-    xTaskCreate(_selftest_task, "selftest", 3072, NULL, 3, NULL);
+#if ENABLE_BUZZER
+    // Short startup chime so we know the board booted.
+    buzzer_play(MELODY_BOOT);
+#endif
+
+#if ENABLE_SENSOR && ENABLE_FACE
+    xTaskCreate(_proximity_task, "proximity", 3072, NULL, 3, NULL);
 #endif
 
     // Watchdog on main task (5s — configured in sdkconfig.defaults)

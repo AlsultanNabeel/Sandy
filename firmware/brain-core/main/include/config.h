@@ -17,10 +17,6 @@
 #define ENABLE_MQTT     0   // needs WIFI
 #define ENABLE_VOICE    0   // needs WIFI
 
-// One-shot hardware self-test at boot: beep + servo sweep + distance logging.
-// Turn off once each peripheral is verified.
-#define HW_SELFTEST     1
-
 // ─── GPIO Pins ────────────────────────────────────────────────────────────────
 // Mapped for the ESP32-S3-DevKitC-1 / N16R8 (verified against the board's
 // broken-out header). Reserved pins that are NOT used here:
