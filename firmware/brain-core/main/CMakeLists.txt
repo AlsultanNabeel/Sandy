@@ -14,6 +14,7 @@ idf_component_register(
         "sandy_face.c"
         "sandy_voice.c"
         "sandy_ears.c"
+        "sandy_spktest.c"
     INCLUDE_DIRS
         "include"
         "."

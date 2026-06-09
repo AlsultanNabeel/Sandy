@@ -17,6 +17,7 @@
 #include "sandy_ota.h"
 #include "sandy_voice.h"
 #include "sandy_ears.h"
+#include "sandy_spktest.h"
 
 static const char *TAG = "main";
 
@@ -67,6 +68,9 @@ void app_main(void) {
 #endif
 #if ENABLE_EARS
     ESP_ERROR_CHECK(ears_init());
+#endif
+#if ENABLE_SPK_TEST
+    ESP_ERROR_CHECK(spktest_init());
 #endif
 #if ENABLE_OTA
     ESP_ERROR_CHECK(ota_init());

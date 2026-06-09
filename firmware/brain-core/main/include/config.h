@@ -16,6 +16,7 @@
 #define ENABLE_OTA      0   // needs WIFI
 #define ENABLE_MQTT     0   // needs WIFI
 #define ENABLE_VOICE    0   // needs WIFI
+#define ENABLE_SPK_TEST 0   // temporary: triple-beep to verify amp + speaker
 
 // ─── GPIO Pins ────────────────────────────────────────────────────────────────
 // Mapped for the ESP32-S3-DevKitC-1 / N16R8 (verified against the board's
