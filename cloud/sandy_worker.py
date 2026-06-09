@@ -80,7 +80,11 @@ def _setup_signals():
 # Main loop
 _RECOVERY_INTERVAL_SECS = 300  # check for stuck processing every 5 min
 _RECOVERY_MAX_AGE_SECS = 1800  # a task stuck over 30 min counts as crashed
-_QUEUE_POLL_TIMEOUT_SECS = 5
+# Blocking pop timeout. This wakes instantly when a task is enqueued, so a long
+# timeout adds no latency — it only controls how often we hit Redis while idle.
+# At 5s that was ~518k commands/month (24/7), right at Upstash's free 500k cap;
+# 30s cuts idle Redis traffic ~6x with no downside.
+_QUEUE_POLL_TIMEOUT_SECS = 30
 _LOOP_BACKOFF_MAX_SECS = 30  # cap on the exponential backoff after repeated loop errors
 
 
