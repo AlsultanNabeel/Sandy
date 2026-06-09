@@ -307,7 +307,16 @@ async def _live_session(ws, remote: str) -> None:
         config_kwargs["realtime_input_config"] = types.RealtimeInputConfig(
             automatic_activity_detection=types.AutomaticActivityDetection(disabled=True),
         )
-    # مع التحقّق مطفّى → نسيب Gemini يكشف الدور تلقائياً (أسرع وأطبيعي).
+    else:
+        # التحقّق مطفّى → نسيب Gemini يكشف الدور، بس نضبطه يردّ بسرعة لحظة ما
+        # تسكت (صمت نهاية أقصر + حساسية نهاية عالية) عشان الرد يكون فوري.
+        config_kwargs["realtime_input_config"] = types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+                silence_duration_ms=500,
+                prefix_padding_ms=200,
+            ),
+        )
     config = types.LiveConnectConfig(**config_kwargs)
 
     client = genai.Client(api_key=GEMINI_API_KEY)
