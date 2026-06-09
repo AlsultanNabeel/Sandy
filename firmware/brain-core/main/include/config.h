@@ -5,10 +5,10 @@
 // time: leave only what you've wired set to 1, reflash, test, then enable the
 // next. WIFI gates the cloud parts (MQTT / OTA / voice) — they need it.
 #define ENABLE_WIFI     0
-#define ENABLE_FACE     1   // ST7789 display — testing this first
-#define ENABLE_SERVO    0
-#define ENABLE_BUZZER   0
-#define ENABLE_SENSOR   0
+#define ENABLE_FACE     1   // ST7789 display
+#define ENABLE_SERVO    1
+#define ENABLE_BUZZER   1
+#define ENABLE_SENSOR   1
 #define ENABLE_MOTORS   0
 #define ENABLE_TOUCH    0
 #define ENABLE_MIC      0   // MAX9814 clap mic
@@ -16,6 +16,10 @@
 #define ENABLE_OTA      0   // needs WIFI
 #define ENABLE_MQTT     0   // needs WIFI
 #define ENABLE_VOICE    0   // needs WIFI
+
+// One-shot hardware self-test at boot: beep + servo sweep + distance logging.
+// Turn off once each peripheral is verified.
+#define HW_SELFTEST     1
 
 // ─── GPIO Pins ────────────────────────────────────────────────────────────────
 // Mapped for the ESP32-S3-DevKitC-1 / N16R8 (verified against the board's
