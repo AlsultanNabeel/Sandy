@@ -48,6 +48,17 @@
 #if ENABLE_FACE
 #include "sandy_face.h"
 #endif
+#if ENABLE_SERVO
+#include "sandy_servo.h"
+#endif
+
+// Face states tied to the conversation, all local (no cloud round-trip):
+// listening while the session is open, happy while she speaks, idle after.
+#if ENABLE_FACE
+#define VOICE_FACE(mood) face_set_mood(mood)
+#else
+#define VOICE_FACE(mood) do {} while (0)
+#endif
 
 static const char *TAG = "voice";
 
@@ -237,6 +248,7 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *even
         if (ev->op_code == 0x1) {  // text control frame
             if (text_has(ev->data_ptr, ev->data_len, "auth_ok")) {
                 s_authed = true;
+                VOICE_FACE(MOOD_FOCUSED);   // she's listening now
                 ESP_LOGI(TAG, "auth ok, streaming");
             } else if (text_has(ev->data_ptr, ev->data_len, "end_turn")) {
                 ESP_LOGD(TAG, "end of Sandy's turn");
@@ -289,6 +301,7 @@ static void spk_task(void *arg) {
             if (avail >= SPK_PREBUF_BYTES || (now_ms() - first_seen) > 250) {
                 playing = true;
                 s_playing = true;
+                VOICE_FACE(MOOD_HAPPY);     // talking face
                 // Restarting right after a stop = an audible mid-reply gap.
                 if (last_stop && (now_ms() - last_stop) < 2000) s_spk_gaps++;
             } else {
@@ -311,6 +324,9 @@ static void spk_task(void *arg) {
             s_playing = false;
             first_seen = 0;
             last_stop = now_ms();
+            // Done talking: back to the listening face while the session is
+            // open (the session manager sets idle when it closes).
+            if (s_session_active) VOICE_FACE(MOOD_FOCUSED);
             // One line per reply: the health of the whole delivery chain.
             // rx≈played & dropped=0 & gaps=0 is a clean run.
             ESP_LOGI(TAG, "playback report: rx=%u played=%u dropped=%u gaps=%d",
@@ -408,6 +424,12 @@ static void mic_task(void *arg) {
     int32_t dc_x1 = 0, dc_y1 = 0;
     int64_t last_diag = 0;
     bool first_frame = true;
+#if ENABLE_SERVO
+    // Per-mic first-difference energy (diff kills each mic's DC offset).
+    // Smoothed over ~400ms; the L/R balance says which side the voice is on.
+    int32_t ear_prev_l = 0, ear_prev_r = 0;
+    int ear_l = 0, ear_r = 0;
+#endif
 
     for (;;) {
         size_t bytes_read = 0;
@@ -429,9 +451,18 @@ static void mic_task(void *arg) {
         // INMP441 gives 24-bit data left-justified in a 32-bit slot. Mix the two
         // mics, shift down to 16-bit (+gain), then DC-block.
         int64_t sum_abs = 0;
+#if ENABLE_SERVO
+        int64_t sum_dl = 0, sum_dr = 0;
+#endif
         for (int i = 0; i < frames; i++) {
             int32_t l = raw[2 * i]     >> VOICE_MIC_GAIN_SHIFT;
             int32_t r = raw[2 * i + 1] >> VOICE_MIC_GAIN_SHIFT;
+#if ENABLE_SERVO
+            sum_dl += (l > ear_prev_l) ? (l - ear_prev_l) : (ear_prev_l - l);
+            sum_dr += (r > ear_prev_r) ? (r - ear_prev_r) : (ear_prev_r - r);
+            ear_prev_l = l;
+            ear_prev_r = r;
+#endif
             int32_t x = (l + r) / 2;
 
             int32_t y = x - dc_x1 + (dc_y1 - (dc_y1 >> 6));  // R ≈ 0.984
@@ -445,6 +476,10 @@ static void mic_task(void *arg) {
         }
 
         int avg = (int)(sum_abs / (frames ? frames : 1));
+#if ENABLE_SERVO
+        ear_l = (ear_l * 3 + (int)(sum_dl / (frames ? frames : 1))) / 4;
+        ear_r = (ear_r * 3 + (int)(sum_dr / (frames ? frames : 1))) / 4;
+#endif
 
         // Half-duplex: mute the mic only while we're ACTUALLY playing Sandy's
         // audio (plus a short tail), not merely when the buffer is non-empty —
@@ -468,6 +503,21 @@ static void mic_task(void *arg) {
 #endif
 #if ENABLE_FACE
                 face_set_mood(MOOD_CURIOUS);
+#endif
+#if ENABLE_SERVO
+                // Look toward whoever called: the wake utterance is still in
+                // the smoothed L/R energies. ±25% imbalance = full swing.
+                int tot = ear_l + ear_r;
+                if (tot > 0) {
+                    int bal = ((ear_r - ear_l) * 100) / tot;   // -100 .. +100
+                    if (VOICE_EARS_INVERT) bal = -bal;
+                    int off = bal * VOICE_EARS_SWING / 25;
+                    if (off >  VOICE_EARS_SWING) off =  VOICE_EARS_SWING;
+                    if (off < -VOICE_EARS_SWING) off = -VOICE_EARS_SWING;
+                    servo_set_angle((uint8_t)(90 + off));
+                    ESP_LOGI(TAG, "ears: l=%d r=%d bal=%d -> angle=%d",
+                             ear_l, ear_r, bal, 90 + off);
+                }
 #endif
             }
         } else {
@@ -611,6 +661,7 @@ static void voice_task(void *arg) {
             ESP_LOGI(TAG, "session idle, closing");
             s_session_active = false;
             ws_close();
+            VOICE_FACE(MOOD_IDLE);
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -627,4 +678,12 @@ esp_err_t voice_init(void) {
 
 bool voice_is_connected(void) {
     return s_authed;
+}
+
+bool voice_session_is_active(void) {
+#if ENABLE_WAKEWORD
+    return s_session_active;
+#else
+    return s_authed;  // always-on build: connected means in-conversation
+#endif
 }

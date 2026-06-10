@@ -28,8 +28,16 @@ volatile sandy_mood_t g_current_mood = MOOD_IDLE;
 
 #if ENABLE_SENSOR && ENABLE_FACE
 // Permanent behaviour: when something comes close, Sandy looks surprised.
+// Hands off while a voice conversation is running — the voice link drives the
+// face then (listening/talking), and this loop would stomp it every 300ms.
 static void _proximity_task(void *arg) {
     for (;;) {
+#if ENABLE_VOICE
+        if (voice_session_is_active()) {
+            vTaskDelay(pdMS_TO_TICKS(300));
+            continue;
+        }
+#endif
         uint32_t d = sensor_get_distance_cm();
         face_set_mood((d > 0 && d < 25) ? MOOD_SURPRISED : MOOD_IDLE);
         vTaskDelay(pdMS_TO_TICKS(300));
@@ -85,7 +93,11 @@ void app_main(void) {
 
     // ── Network ───────────────────────────────────────────────────────────────
 #if ENABLE_MQTT
-    ESP_ERROR_CHECK(mqtt_sandy_start());
+    // Not ESP_ERROR_CHECK: cloud body-control is optional. A bad broker URI or
+    // a down broker must not brick the whole robot into a boot loop.
+    if (mqtt_sandy_start() != ESP_OK) {
+        ESP_LOGE(TAG, "MQTT failed to start — running without cloud body control");
+    }
 #endif
 
     // ── Voice link (waits for Wi-Fi, then connects to /voice) ───────────────────

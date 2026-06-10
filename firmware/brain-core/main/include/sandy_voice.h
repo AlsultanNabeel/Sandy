@@ -13,3 +13,8 @@ esp_err_t voice_init(void);
 
 // True once the server accepted the handshake (auth_ok) and the link is live.
 bool voice_is_connected(void);
+
+// True while a voice conversation is in progress (wake word heard and the
+// session not yet idle-closed). Other subsystems should leave the face and
+// neck alone while this is true.
+bool voice_session_is_active(void);

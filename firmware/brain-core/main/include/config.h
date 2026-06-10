@@ -14,7 +14,7 @@
 #define ENABLE_MIC      0   // MAX9814 clap mic
 #define ENABLE_EARS     0   // stereo sound-direction (temp off; merging into VOICE next)
 #define ENABLE_OTA      0   // needs WIFI
-#define ENABLE_MQTT     0   // needs WIFI
+#define ENABLE_MQTT     1   // needs WIFI — cloud body control (mood/servo/buzzer/base)
 #define ENABLE_VOICE    1   // needs WIFI
 #define ENABLE_WAKEWORD 1   // local WakeNet gate for the voice session (needs VOICE)
 #define ENABLE_SPK_TEST 0   // temporary: triple-beep to verify amp + speaker
@@ -139,3 +139,9 @@
 // (seen ~400-1000 on the diag log) or background noise keeps the session from
 // ever closing; real speech runs 2500+. Tune with the `diag mic=` log.
 #define VOICE_SESSION_VAD_LEVEL    2000
+
+// Turn-toward-sound: on the wake word, point the neck at whoever called.
+// Direction comes from the left/right mic energy balance of the wake
+// utterance itself. Tune with the `ears:` log line.
+#define VOICE_EARS_SWING           35   // max degrees off center (90)
+#define VOICE_EARS_INVERT          0    // set 1 if she turns the wrong way

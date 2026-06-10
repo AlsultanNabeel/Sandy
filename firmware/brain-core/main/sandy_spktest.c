@@ -16,7 +16,7 @@ static const char *TAG = "spktest";
 
 #define SR        16000          // sample rate
 #define TONE_HZ   880            // beep pitch
-#define AMP       8000           // ~25% of full scale (comfortable volume)
+#define AMP       4000           // reduced from 8000 for cleaner tone (safer, less distortion)
 #define CHUNK     (SR / 50)      // 20 ms of samples = 320
 
 static i2s_chan_handle_t s_tx;
