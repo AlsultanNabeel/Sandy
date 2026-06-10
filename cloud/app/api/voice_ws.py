@@ -343,8 +343,13 @@ async def _live_session(ws, remote: str) -> None:
                 t.cancel()
                 try:
                     await t
-                except asyncio.CancelledError:
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
                     pass
+            # Retrieve exceptions from the finished side too, or asyncio logs a
+            # noisy "Task exception was never retrieved" after every disconnect.
+            for t in done:
+                if not t.cancelled() and t.exception():
+                    logger.info("[voice_ws] bridge task ended: %s", t.exception())
 
     except Exception as exc:
         logger.error("[voice_ws] Live session error (%s): %s", remote, exc)
@@ -360,7 +365,10 @@ async def _device_to_live_fast(ws, session) -> None:
 
     loop = asyncio.get_event_loop()
     while True:
-        chunk = await loop.run_in_executor(None, ws.receive)
+        try:
+            chunk = await loop.run_in_executor(None, ws.receive)
+        except Exception:  # device closed mid-session (ConnectionClosed)
+            break
         if chunk is None:
             break
         if not isinstance(chunk, (bytes, bytearray)):
@@ -392,7 +400,10 @@ async def _device_to_live(ws, session, recent: "_RecentAudio") -> None:
         )
 
     while True:
-        chunk = await loop.run_in_executor(None, ws.receive)
+        try:
+            chunk = await loop.run_in_executor(None, ws.receive)
+        except Exception:  # device closed mid-session (ConnectionClosed)
+            break
         if chunk is None:
             break
         if not isinstance(chunk, (bytes, bytearray)):

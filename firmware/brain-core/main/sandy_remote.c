@@ -7,6 +7,7 @@
 #include "sandy_remote.h"
 #include <string.h>
 #include <stdarg.h>
+#include <errno.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/stream_buffer.h"
@@ -30,12 +31,16 @@ static vprintf_like_t       s_old_vprintf;
 static volatile bool        s_log_connected = false;
 
 // Tee every esp_log line: to UART (as before) and into a buffer the log task
-// drains to the TCP client. Re-entrant-safe (just vsnprintf + stream buffer).
+// drains to the TCP client. We buffer ALWAYS (not just while connected): when
+// full, new lines are dropped, so the buffer holds the OLDEST ~8KB since the
+// last drain — exactly the boot/init lines, which are still there when a
+// client connects a few seconds after reset instead of being lost over WiFi.
+// Re-entrant-safe (just vsnprintf + stream buffer).
 static int log_vprintf(const char *fmt, va_list ap) {
     va_list cp;
     va_copy(cp, ap);
     int r = s_old_vprintf ? s_old_vprintf(fmt, ap) : 0;
-    if (s_logbuf && s_log_connected) {
+    if (s_logbuf) {
         char line[200];
         int n = vsnprintf(line, sizeof(line), fmt, cp);
         if (n > 0) xStreamBufferSend(s_logbuf, line, MIN(n, (int)sizeof(line)), 0);
@@ -59,13 +64,32 @@ static void log_server_task(void *arg) {
     for (;;) {
         int c = accept(srv, NULL, NULL);
         if (c < 0) { vTaskDelay(pdMS_TO_TICKS(200)); continue; }
-        xStreamBufferReset(s_logbuf);
+        // TCP keepalive so a vanished client (closed laptop, dropped WiFi) is
+        // detected even when no logs are flowing — otherwise this single-client
+        // server stays wedged on a half-open connection and never accepts a
+        // new one. Dead after ~5s idle + 3 probes 5s apart.
+        int ka = 1, idle = 5, intvl = 5, cnt = 3;
+        setsockopt(c, SOL_SOCKET,  SO_KEEPALIVE,  &ka,    sizeof(ka));
+        setsockopt(c, IPPROTO_TCP, TCP_KEEPIDLE,  &idle,  sizeof(idle));
+        setsockopt(c, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
+        setsockopt(c, IPPROTO_TCP, TCP_KEEPCNT,   &cnt,   sizeof(cnt));
+        // Keep whatever boot/init logs are already buffered (don't reset) so the
+        // client sees them on connect.
         s_log_connected = true;
         ESP_LOGI(TAG, "log client connected");
         char buf[256];
         for (;;) {
             size_t n = xStreamBufferReceive(s_logbuf, buf, sizeof(buf), pdMS_TO_TICKS(500));
-            if (n > 0 && send(c, buf, n, 0) < 0) break;
+            if (n > 0) {
+                if (send(c, buf, n, 0) < 0) break;
+            } else {
+                // Idle: peek so a graceful close (or a keepalive-declared death)
+                // is noticed without waiting for the next log line to fail.
+                char tmp[8];
+                int pk = recv(c, tmp, sizeof(tmp), MSG_DONTWAIT | MSG_PEEK);
+                if (pk == 0) break;                                       // peer closed
+                if (pk < 0 && errno != EWOULDBLOCK && errno != EAGAIN) break;  // socket dead
+            }
         }
         s_log_connected = false;
         close(c);

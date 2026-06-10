@@ -135,5 +135,7 @@
 // Close the session (disconnect Gemini) after this long with no speech.
 #define VOICE_SESSION_IDLE_MS      8000
 // Mic level (avg abs sample/frame) above which the user counts as still
-// talking, to hold the session open. Tune with the `diag mic=` log.
-#define VOICE_SESSION_VAD_LEVEL    500
+// talking, to hold the session open. Must sit ABOVE the room's ambient floor
+// (seen ~400-1000 on the diag log) or background noise keeps the session from
+// ever closing; real speech runs 2500+. Tune with the `diag mic=` log.
+#define VOICE_SESSION_VAD_LEVEL    2000

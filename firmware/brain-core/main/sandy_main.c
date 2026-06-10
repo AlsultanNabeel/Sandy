@@ -2,6 +2,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_task_wdt.h"
+#include "esp_system.h"
 #include "config.h"
 #include "sandy_types.h"
 #include "sandy_nvs.h"
@@ -37,7 +38,9 @@ static void _proximity_task(void *arg) {
 #endif
 
 void app_main(void) {
-    ESP_LOGI(TAG, "Sandy Brain S3 — booting");
+    // reset_reason separates a brownout from a panic from a plain power-on at
+    // a glance — the first thing to check when the board reboots on its own.
+    ESP_LOGI(TAG, "Sandy Brain S3 — booting (reset_reason=%d)", (int)esp_reset_reason());
 
     // ── Core services ─────────────────────────────────────────────────────────
     ESP_ERROR_CHECK(nvs_sandy_init());

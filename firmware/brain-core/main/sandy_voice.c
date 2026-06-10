@@ -11,9 +11,6 @@
 //
 // Half-duplex: we stop sending the mic while Sandy is talking, otherwise the
 // speaker leaks back into the mic and she answers her own voice.
-//
-// Untested on hardware yet: verify the I2S pins against your wiring and tune
-// VOICE_MIC_GAIN_SHIFT once the board is assembled.
 
 #include "sandy_voice.h"
 #include "config.h"
@@ -27,6 +24,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/stream_buffer.h"
+#include "freertos/semphr.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -44,10 +42,17 @@
 #endif
 
 #include "sandy_wifi.h"
+#if ENABLE_BUZZER
+#include "sandy_buzzer.h"
+#endif
+#if ENABLE_FACE
+#include "sandy_face.h"
+#endif
 
 static const char *TAG = "voice";
 
 static esp_websocket_client_handle_t s_client;
+static SemaphoreHandle_t s_ws_mutex;  // guards s_client create/send/destroy
 static i2s_chan_handle_t s_rx_chan;   // INMP441 mic
 static i2s_chan_handle_t s_tx_chan;   // MAX98357 amp
 static StreamBufferHandle_t s_spk_stream;   // server audio waiting to play
@@ -76,8 +81,9 @@ static const bool s_session_active = true;    // no gate: always streaming
 #define SPK_CHUNK_BYTES     1920    // ~40 ms at 24 kHz / 16-bit
 // Jitter buffer: hold this much before starting playback so uneven WiFi
 // delivery doesn't underrun the I2S and make Sandy's voice stutter.
-// 24 kHz · 16-bit = 48000 B/s, so 7200 B ≈ 150 ms.
-#define SPK_PREBUF_BYTES    7200
+// 24 kHz · 16-bit = 48000 B/s, so 14400 B ≈ 300 ms — a bigger cushion against
+// WiFi delivery jitter keeps playback from underrunning (less stutter).
+#define SPK_PREBUF_BYTES    14400
 // Output volume: right-shift each sample. 2 = quarter, 1 = half, 0 = full.
 #define SPK_VOL_SHIFT       2
 
@@ -198,7 +204,9 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *even
     case WEBSOCKET_EVENT_CONNECTED: {
         char hello[192];
         int n = build_hello(hello, sizeof(hello));
-        esp_websocket_client_send_text(s_client, hello, n, portMAX_DELAY);
+        // ev->client, not s_client: this runs on the WS task, and the session
+        // manager may already be swapping s_client for the next session.
+        esp_websocket_client_send_text(ev->client, hello, n, portMAX_DELAY);
         ESP_LOGI(TAG, "connected, sent hello");
         break;
     }
@@ -245,10 +253,10 @@ static void spk_task(void *arg) {
                 continue;
             }
             if (first_seen == 0) first_seen = now_ms();
-            // Start once we have a cushion — or after 150ms even if it's a short
+            // Start once we have a cushion — or after 250ms even if it's a short
             // reply, so a small chunk never gets stuck unplayed (which would
             // keep the mic muted forever via half-duplex).
-            if (avail >= SPK_PREBUF_BYTES || (now_ms() - first_seen) > 150) {
+            if (avail >= SPK_PREBUF_BYTES || (now_ms() - first_seen) > 250) {
                 playing = true;
                 s_playing = true;
             } else {
@@ -320,6 +328,18 @@ static bool wakeword_feed(const int16_t *pcm, int n) {
 }
 #endif  // ENABLE_WAKEWORD
 
+// Ship one mic frame up the WS. Drops the frame instead of blocking when the
+// session manager is mid-teardown — the mic loop must never stall, or the
+// wake-word listener stalls with it.
+static void mic_send(const int16_t *pcm, int frames) {
+    if (xSemaphoreTake(s_ws_mutex, 0) != pdTRUE) return;
+    if (s_client && s_authed) {
+        esp_websocket_client_send_bin(s_client, (const char *)pcm,
+                                      frames * sizeof(int16_t), pdMS_TO_TICKS(1000));
+    }
+    xSemaphoreGive(s_ws_mutex);
+}
+
 // Read the mic, convert to 16-bit PCM, and stream it up while Sandy is quiet.
 static void mic_task(void *arg) {
     // Stereo read: 2 int32 slots per frame. pcm holds the mono mix.
@@ -377,6 +397,15 @@ static void mic_task(void *arg) {
             if (!sandy_talking && wakeword_feed(pcm, frames)) {
                 ESP_LOGI(TAG, "wake word detected");
                 s_wake_req = true;
+                // Local "I heard you" cue — fires on detection, before any cloud
+                // connection, so it confirms the wake word independently of the
+                // network and the (flaky) remote log.
+#if ENABLE_BUZZER
+                buzzer_play(MELODY_CURIOUS);
+#endif
+#if ENABLE_FACE
+                face_set_mood(MOOD_CURIOUS);
+#endif
             }
         } else {
             // Open session: hold it alive on user speech or Sandy's own audio;
@@ -385,14 +414,12 @@ static void mic_task(void *arg) {
                 s_session_voice_ms = now_ms();
             }
             if (s_authed && !sandy_talking) {
-                esp_websocket_client_send_bin(s_client, (const char *)pcm,
-                                              frames * sizeof(int16_t), portMAX_DELAY);
+                mic_send(pcm, frames);
             }
         }
 #else
         if (s_authed && !sandy_talking) {
-            esp_websocket_client_send_bin(s_client, (const char *)pcm,
-                                          frames * sizeof(int16_t), portMAX_DELAY);
+            mic_send(pcm, frames);
         }
 #endif
 
@@ -411,6 +438,45 @@ static void mic_task(void *arg) {
 }
 
 
+// One WS client per session: stop()+start() on the same client proved
+// unreliable (after the first session closed, the next start never reconnected
+// and voice went silent until reboot), so every session gets a fresh init and
+// ends with a full destroy. s_ws_mutex keeps mic_send() off a client that is
+// being torn down.
+static bool ws_open(void) {
+    esp_websocket_client_config_t cfg = {
+        .uri = SANDY_VOICE_WS_URI,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .buffer_size = 4096,
+        .reconnect_timeout_ms = 5000,
+        .network_timeout_ms = 10000,
+    };
+    xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
+    s_client = esp_websocket_client_init(&cfg);
+    if (s_client) {
+        esp_websocket_register_events(s_client, WEBSOCKET_EVENT_ANY, on_ws_event, NULL);
+        if (esp_websocket_client_start(s_client) != ESP_OK) {
+            esp_websocket_client_destroy(s_client);
+            s_client = NULL;
+        }
+    }
+    bool ok = s_client != NULL;
+    xSemaphoreGive(s_ws_mutex);
+    if (!ok) ESP_LOGE(TAG, "ws open failed");
+    return ok;
+}
+
+static void ws_close(void) {
+    s_authed = false;
+    xSemaphoreTake(s_ws_mutex, portMAX_DELAY);
+    if (s_client) {
+        esp_websocket_client_stop(s_client);
+        esp_websocket_client_destroy(s_client);
+        s_client = NULL;
+    }
+    xSemaphoreGive(s_ws_mutex);
+}
+
 static void voice_task(void *arg) {
     while (!wifi_sandy_is_connected()) {
         vTaskDelay(pdMS_TO_TICKS(500));
@@ -426,16 +492,7 @@ static void voice_task(void *arg) {
     // Big buffer in PSRAM so a fast burst of Sandy's reply isn't dropped (the
     // old 32 KB internal buffer overflowed and chopped her audio).
     s_spk_stream = xStreamBufferCreateWithCaps(192 * 1024, 1, MALLOC_CAP_SPIRAM);
-
-    esp_websocket_client_config_t cfg = {
-        .uri = SANDY_VOICE_WS_URI,
-        .crt_bundle_attach = esp_crt_bundle_attach,
-        .buffer_size = 4096,
-        .reconnect_timeout_ms = 5000,
-        .network_timeout_ms = 10000,
-    };
-    s_client = esp_websocket_client_init(&cfg);
-    esp_websocket_register_events(s_client, WEBSOCKET_EVENT_ANY, on_ws_event, NULL);
+    s_ws_mutex = xSemaphoreCreateMutex();
 
     // Pin the audio tasks to core 1 (WiFi/TLS runs on core 0) and give playback
     // the higher priority so Sandy's voice never gets starved → no stutter.
@@ -448,7 +505,7 @@ static void voice_task(void *arg) {
         // works; just without the cost gate.
         ESP_LOGW(TAG, "wake word unavailable; voice stays always-on");
         s_session_active = true;
-        esp_websocket_client_start(s_client);
+        ws_open();
         vTaskDelete(NULL);
         return;
     }
@@ -460,20 +517,22 @@ static void voice_task(void *arg) {
             if (s_wake_req) {
                 s_wake_req = false;
                 ESP_LOGI(TAG, "opening voice session");
-                s_session_voice_ms = now_ms();
-                s_session_active = true;
-                esp_websocket_client_start(s_client);
+                if (ws_open()) {
+                    s_session_voice_ms = now_ms();
+                    s_session_active = true;
+                }
+                // On failure (WiFi blip mid-open) we just wait for the next
+                // wake word — nothing to clean up, ws_open destroyed it all.
             }
         } else if ((now_ms() - s_session_voice_ms) > VOICE_SESSION_IDLE_MS && !s_playing) {
             ESP_LOGI(TAG, "session idle, closing");
             s_session_active = false;
-            s_authed = false;
-            esp_websocket_client_stop(s_client);
+            ws_close();
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 #else
-    esp_websocket_client_start(s_client);
+    ws_open();
     vTaskDelete(NULL);  // setup done; the audio tasks carry on
 #endif
 }
