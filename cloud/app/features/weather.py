@@ -1,6 +1,7 @@
 import time
 import requests
 from typing import Any, Dict, Optional
+from urllib.parse import quote
 
 from app.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
 
@@ -16,7 +17,7 @@ def _fetch_weather(url: str) -> Dict[str, Any]:
 
 
 def get_weather(city: str = "October City", **kwargs) -> Optional[Dict[str, Any]]:
-    url = f"https://wttr.in/{city.replace(' ', '+')}+Egypt?format=j1"
+    url = f"https://wttr.in/{quote(city)}+Egypt?format=j1"
 
     last_error: Exception = Exception("unknown")
     for attempt in range(1, _RETRY_ATTEMPTS + 1):

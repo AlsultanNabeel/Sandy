@@ -36,8 +36,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 # Azure OpenAI (chat + vision)
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip()
 AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY", "").strip()
+# Single canonical default — keep azure_intent_client / code_llm / azure_image
+# fallbacks in sync with this value (they read the env late on purpose).
 AZURE_OPENAI_API_VERSION = os.getenv(
-    "AZURE_OPENAI_API_VERSION", "2024-02-15-preview"
+    "AZURE_OPENAI_API_VERSION", "2024-08-01-preview"
 ).strip()
 AZURE_OPENAI_CHAT_DEPLOYMENT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "").strip()
 AZURE_OPENAI_VISION_DEPLOYMENT = os.getenv("AZURE_OPENAI_VISION_DEPLOYMENT", "").strip()

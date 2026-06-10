@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 def _client():
     endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "").strip()
     api_key = os.getenv("AZURE_OPENAI_API_KEY", "").strip()
-    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview").strip()
+    api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview").strip()
     if not endpoint or not api_key:
         return None
     try:

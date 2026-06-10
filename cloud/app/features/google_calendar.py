@@ -316,6 +316,8 @@ def add_calendar_event(
 
     except PermissionError:
         raise
+    except GoogleOAuthReconnectNeeded:
+        raise  # write paths must prompt reconnect like the read paths do
     except Exception as e:
         print(f"[Calendar] failed: {e}")
         return {"success": False, "error": str(e)}
@@ -483,6 +485,8 @@ def find_calendar_event_by_title(title: str) -> Dict[str, Any]:
             "location": e.get("location", ""),
         }
 
+    except GoogleOAuthReconnectNeeded:
+        raise
     except Exception as e:
         print(f"[Calendar] find_calendar_event_by_title failed: {e}")
         return {"found": False, "error": str(e)}
@@ -548,6 +552,8 @@ def delete_calendar_event_by_title(title: str) -> Dict[str, Any]:
             "deleted_count": 1,
         }
 
+    except GoogleOAuthReconnectNeeded:
+        raise
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -669,6 +675,8 @@ def delete_calendar_events_in_range(
             "deleted_titles": deleted,
         }
 
+    except GoogleOAuthReconnectNeeded:
+        raise
     except Exception as e:
         print(f"[Calendar] range delete failed: {e}")
         return {"success": False, "error": str(e), "deleted_count": 0}
@@ -736,6 +744,8 @@ def update_calendar_event(
         print(f"[Calendar] event updated: {result.get('htmlLink')}")
         return {"success": True, "link": result.get("htmlLink")}
 
+    except GoogleOAuthReconnectNeeded:
+        raise
     except Exception as e:
         print(f"[Calendar] update failed: {e}")
         return {"success": False, "error": str(e)}
@@ -842,6 +852,8 @@ def delete_calendar_event_by_id(event_id: str) -> bool:
             "delete_calendar_event_by_id",
         )
         return True
+    except GoogleOAuthReconnectNeeded:
+        raise
     except Exception as e:
         print(f"[Calendar] delete_calendar_event_by_id failed: {e}")
         return False
