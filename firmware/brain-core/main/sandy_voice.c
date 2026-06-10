@@ -111,8 +111,10 @@ static const bool s_session_active = true;    // no gate: always streaming
 // 24 kHz · 16-bit = 48000 B/s, so 14400 B ≈ 300 ms — a bigger cushion against
 // WiFi delivery jitter keeps playback from underrunning (less stutter).
 #define SPK_PREBUF_BYTES    14400
-// Output volume: right-shift each sample. 2 = quarter, 1 = half, 0 = full.
-#define SPK_VOL_SHIFT       1
+// Output volume = sample × MUL >> SHIFT. 3>>3 = 0.375 of full scale — a notch
+// below half: loud enough across the room, no longer harsh up close.
+#define SPK_VOL_MUL         3
+#define SPK_VOL_SHIFT       3
 
 
 static int64_t now_ms(void) {
@@ -218,6 +220,17 @@ static esp_err_t i2s_start(void) {
         },
     };
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(s_tx_chan, &tx_std));
+    // Preload silence so the first DMA cycle doesn't blast whatever happened
+    // to be in those buffers — the static heard at the first reply after a
+    // power-on.
+    {
+        static const uint8_t zeros[1440] = {0};
+        size_t loaded = 0, w = 0;
+        for (int i = 0; i < 8 && i2s_channel_preload_data(s_tx_chan, zeros, sizeof(zeros), &w) == ESP_OK && w > 0; i++) {
+            loaded += w;
+        }
+        (void)loaded;
+    }
     ESP_ERROR_CHECK(i2s_channel_enable(s_tx_chan));
     return ESP_OK;
 }
@@ -258,9 +271,14 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *even
         } else if (ev->op_code == 0x2 || ev->op_code == 0x0) {  // binary audio (+ continuation)
             if (ev->data_len > 0) {
                 s_last_rx_audio_ms = now_ms();
-                size_t sent = xStreamBufferSend(s_spk_stream, ev->data_ptr, ev->data_len, 0);
-                s_spk_rx_bytes += ev->data_len;
-                if (sent < (size_t)ev->data_len) s_spk_drop_bytes += ev->data_len - sent;
+                // Whole 16-bit samples only: a partial write that split a
+                // sample would byte-shift everything after it into loud static.
+                size_t space = xStreamBufferSpacesAvailable(s_spk_stream) & ~(size_t)1;
+                size_t want  = (size_t)ev->data_len;
+                size_t n     = want < space ? want : space;
+                xStreamBufferSend(s_spk_stream, ev->data_ptr, n, 0);
+                s_spk_rx_bytes += want;
+                if (n < want) s_spk_drop_bytes += want - n;
             }
         }
         break;
@@ -314,7 +332,9 @@ static void spk_task(void *arg) {
         if (n) {
 #if SPK_VOL_SHIFT
             int16_t *s = (int16_t *)buf;
-            for (int i = 0; i < (int)(n / sizeof(int16_t)); i++) s[i] >>= SPK_VOL_SHIFT;
+            for (int i = 0; i < (int)(n / sizeof(int16_t)); i++) {
+                s[i] = (int16_t)(((int32_t)s[i] * SPK_VOL_MUL) >> SPK_VOL_SHIFT);
+            }
 #endif
             size_t written = 0;
             i2s_channel_write(s_tx_chan, buf, n, &written, portMAX_DELAY);
