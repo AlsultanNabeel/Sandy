@@ -249,7 +249,11 @@ static void spk_task(void *arg) {
             if (avail == 0) {
                 first_seen = 0;
                 s_playing = false;
-                vTaskDelay(pdMS_TO_TICKS(8));
+                // ≥ 2 ticks. At FREERTOS_HZ=100 a delay under 10ms rounds to
+                // ZERO ticks and this loop busy-spins — at priority 9 on core 1
+                // that silently starves the mic task and kills the wake word
+                // (IDLE1 watchdog is off in sdkconfig, so nothing ever warned).
+                vTaskDelay(pdMS_TO_TICKS(20));
                 continue;
             }
             if (first_seen == 0) first_seen = now_ms();
@@ -260,7 +264,7 @@ static void spk_task(void *arg) {
                 playing = true;
                 s_playing = true;
             } else {
-                vTaskDelay(pdMS_TO_TICKS(8));
+                vTaskDelay(pdMS_TO_TICKS(20));  // same zero-tick trap as above
                 continue;
             }
         }
@@ -355,12 +359,22 @@ static void mic_task(void *arg) {
     // VAD sees real silence between words. y[n] = x[n] - x[n-1] + R*y[n-1].
     int32_t dc_x1 = 0, dc_y1 = 0;
     int64_t last_diag = 0;
+    bool first_frame = true;
 
     for (;;) {
         size_t bytes_read = 0;
+        // Bounded wait (not portMAX_DELAY): if I2S ever wedges, the task stays
+        // observable instead of vanishing into an infinite block.
         if (i2s_channel_read(s_rx_chan, raw, MIC_FRAME_SAMPLES * 2 * sizeof(int32_t),
-                             &bytes_read, portMAX_DELAY) != ESP_OK) {
+                             &bytes_read, pdMS_TO_TICKS(1000)) != ESP_OK) {
             continue;
+        }
+        if (first_frame) {
+            first_frame = false;
+            // One-shot "the mic path is alive" marker: if this line is missing
+            // from a boot log, I2S RX is delivering nothing — look at wiring or
+            // channel config, not at the cloud.
+            ESP_LOGI(TAG, "mic up (first frame, %u bytes)", (unsigned)bytes_read);
         }
         int frames = bytes_read / (2 * sizeof(int32_t));
 
@@ -496,8 +510,14 @@ static void voice_task(void *arg) {
 
     // Pin the audio tasks to core 1 (WiFi/TLS runs on core 0) and give playback
     // the higher priority so Sandy's voice never gets starved → no stutter.
-    xTaskCreatePinnedToCore(spk_task, "voice_spk", 4096, NULL, 9, NULL, 1);
-    xTaskCreatePinnedToCore(mic_task, "voice_mic", 4096, NULL, 8, NULL, 1);
+    // Stacks live in internal RAM — if it's exhausted these fail SILENTLY and
+    // voice just never answers, so check and shout.
+    if (xTaskCreatePinnedToCore(spk_task, "voice_spk", 4096, NULL, 9, NULL, 1) != pdPASS ||
+        xTaskCreatePinnedToCore(mic_task, "voice_mic", 4096, NULL, 8, NULL, 1) != pdPASS) {
+        ESP_LOGE(TAG, "audio task create FAILED (heap_int free=%u largest=%u)",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                 (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+    }
 
 #if ENABLE_WAKEWORD
     if (!wakeword_init()) {
