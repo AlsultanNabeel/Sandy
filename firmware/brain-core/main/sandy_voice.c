@@ -60,6 +60,14 @@ static volatile bool s_authed;
 static volatile int64_t s_last_rx_audio_ms;  // last time we got Sandy's audio
 static volatile bool s_playing;              // true only while actively playing audio
 
+// Playback health counters (cumulative since boot; reported when playback
+// stops). dropped > 0 means the jitter buffer overflowed; gap restarts mean
+// audible mid-reply dropouts — both point at delivery, not at the I2S side.
+static volatile uint32_t s_spk_rx_bytes;     // audio received from the cloud
+static volatile uint32_t s_spk_drop_bytes;   // received but didn't fit the buffer
+static uint32_t s_spk_play_bytes;            // actually written to the amp
+static int s_spk_gaps;                       // playback restarts within 2s
+
 #if ENABLE_WAKEWORD
 // Session is OPEN only between a wake word and the following silence. The WS
 // (and so the paid Gemini link) is connected only while it's open.
@@ -169,6 +177,13 @@ static esp_err_t i2s_start(void) {
 
     // Speaker: MAX98357 on I2S_NUM_1, TX only, 16-bit at 24 kHz (Gemini output).
     i2s_chan_config_t tx_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
+    // Underrun must play SILENCE. With auto-clear off (the default) the DMA
+    // replays its last block over and over on every starved moment — that's a
+    // machine-gun trill layered on Sandy's voice, not a clean dropout.
+    tx_cfg.auto_clear_after_cb = true;
+    // Bigger hardware cushion: 6 desc × 720 frames ≈ 180 ms at 24 kHz mono, so
+    // a late task switch doesn't instantly starve the amp.
+    tx_cfg.dma_frame_num = 720;
     ESP_ERROR_CHECK(i2s_new_channel(&tx_cfg, &s_tx_chan, NULL));
     i2s_std_config_t tx_std = {
         .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(VOICE_OUT_RATE),
@@ -223,7 +238,9 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *even
         } else if (ev->op_code == 0x2 || ev->op_code == 0x0) {  // binary audio (+ continuation)
             if (ev->data_len > 0) {
                 s_last_rx_audio_ms = now_ms();
-                xStreamBufferSend(s_spk_stream, ev->data_ptr, ev->data_len, 0);
+                size_t sent = xStreamBufferSend(s_spk_stream, ev->data_ptr, ev->data_len, 0);
+                s_spk_rx_bytes += ev->data_len;
+                if (sent < (size_t)ev->data_len) s_spk_drop_bytes += ev->data_len - sent;
             }
         }
         break;
@@ -243,6 +260,7 @@ static void spk_task(void *arg) {
     uint8_t buf[SPK_CHUNK_BYTES];
     bool playing = false;
     int64_t first_seen = 0;   // when data first appeared while idle
+    int64_t last_stop = 0;    // when playback last went idle
     for (;;) {
         if (!playing) {
             size_t avail = xStreamBufferBytesAvailable(s_spk_stream);
@@ -263,6 +281,8 @@ static void spk_task(void *arg) {
             if (avail >= SPK_PREBUF_BYTES || (now_ms() - first_seen) > 250) {
                 playing = true;
                 s_playing = true;
+                // Restarting right after a stop = an audible mid-reply gap.
+                if (last_stop && (now_ms() - last_stop) < 2000) s_spk_gaps++;
             } else {
                 vTaskDelay(pdMS_TO_TICKS(20));  // same zero-tick trap as above
                 continue;
@@ -277,10 +297,17 @@ static void spk_task(void *arg) {
 #endif
             size_t written = 0;
             i2s_channel_write(s_tx_chan, buf, n, &written, portMAX_DELAY);
+            s_spk_play_bytes += n;
         } else {
             playing = false;
             s_playing = false;
             first_seen = 0;
+            last_stop = now_ms();
+            // One line per reply: the health of the whole delivery chain.
+            // rx≈played & dropped=0 & gaps=0 is a clean run.
+            ESP_LOGI(TAG, "playback report: rx=%u played=%u dropped=%u gaps=%d",
+                     (unsigned)s_spk_rx_bytes, (unsigned)s_spk_play_bytes,
+                     (unsigned)s_spk_drop_bytes, s_spk_gaps);
         }
     }
 }
@@ -461,7 +488,11 @@ static bool ws_open(void) {
     esp_websocket_client_config_t cfg = {
         .uri = SANDY_VOICE_WS_URI,
         .crt_bundle_attach = esp_crt_bundle_attach,
-        .buffer_size = 4096,
+        .buffer_size = 8192,
+        // Above LVGL and the housekeeping tasks (default 5), below the audio
+        // pair (8/9): TLS decrypt keeps up and audio arrives smoothly instead
+        // of in starved bursts.
+        .task_prio = 7,
         .reconnect_timeout_ms = 5000,
         .network_timeout_ms = 10000,
     };
@@ -503,9 +534,11 @@ static void voice_task(void *arg) {
         return;
     }
 
-    // Big buffer in PSRAM so a fast burst of Sandy's reply isn't dropped (the
-    // old 32 KB internal buffer overflowed and chopped her audio).
-    s_spk_stream = xStreamBufferCreateWithCaps(192 * 1024, 1, MALLOC_CAP_SPIRAM);
+    // Big buffer in PSRAM so a fast burst of Sandy's reply isn't dropped.
+    // 1 MB ≈ 21 s of 24 kHz/16-bit audio: Gemini streams a long reply faster
+    // than realtime, and the old 192 KB (~4 s) overflowed on them — the
+    // overflow drops chopped whole pieces out of her sentences.
+    s_spk_stream = xStreamBufferCreateWithCaps(1024 * 1024, 1, MALLOC_CAP_SPIRAM);
     s_ws_mutex = xSemaphoreCreateMutex();
 
     // Pin the audio tasks to core 1 (WiFi/TLS runs on core 0) and give playback

@@ -63,6 +63,10 @@ esp_err_t wifi_sandy_start(void) {
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_cfg));
     ESP_ERROR_CHECK(esp_wifi_start());
+    // No modem sleep: the default WIFI_PS_MIN_MODEM naps between DTIM beacons,
+    // which turns a steady audio stream into late bursts — the #1 source of
+    // choppy playback. The robot runs off a supply, so the power cost is fine.
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
 
     EventBits_t bits = xEventGroupWaitBits(
         s_eg, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
