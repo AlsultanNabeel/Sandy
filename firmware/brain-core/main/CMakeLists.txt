@@ -16,6 +16,7 @@ idf_component_register(
         "sandy_ears.c"
         "sandy_spktest.c"
         "sandy_remote.c"
+        "sandy_led.c"
     INCLUDE_DIRS
         "include"
         "."

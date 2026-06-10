@@ -19,6 +19,7 @@
 #define ENABLE_WAKEWORD 1   // local WakeNet gate for the voice session (needs VOICE)
 #define ENABLE_SPK_TEST 0   // temporary: triple-beep to verify amp + speaker
 #define ENABLE_REMOTE   1   // cable-free dev: OTA upload + serial log over WiFi (needs WIFI)
+#define ENABLE_LED      1   // on-board WS2812: idle blue / listening white / talking amber
 
 // ─── GPIO Pins ────────────────────────────────────────────────────────────────
 // Mapped for the ESP32-S3-DevKitC-1 / N16R8 (verified against the board's
@@ -139,6 +140,11 @@
 // (seen ~400-1000 on the diag log) or background noise keeps the session from
 // ever closing; real speech runs 2500+. Tune with the `diag mic=` log.
 #define VOICE_SESSION_VAD_LEVEL    2000
+
+// With nothing happening for this long, the face drifts off to sleep
+// (MOOD_SLEEPY). Any interaction — wake word, proximity, a cloud mood —
+// wakes her instantly.
+#define FACE_SLEEP_AFTER_MS     (5 * 60 * 1000)
 
 // Turn-toward-sound: on the wake word, point the neck at whoever called.
 // Direction comes from the left/right mic energy balance of the wake

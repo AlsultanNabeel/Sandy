@@ -60,6 +60,13 @@
 #define VOICE_FACE(mood) do {} while (0)
 #endif
 
+#if ENABLE_LED
+#include "sandy_led.h"
+#define VOICE_LED(st) led_set_state(st)
+#else
+#define VOICE_LED(st) do {} while (0)
+#endif
+
 static const char *TAG = "voice";
 
 static esp_websocket_client_handle_t s_client;
@@ -262,6 +269,7 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *even
             if (text_has(ev->data_ptr, ev->data_len, "auth_ok")) {
                 s_authed = true;
                 VOICE_FACE(MOOD_FOCUSED);   // she's listening now
+                VOICE_LED(LED_STATE_LISTENING);
                 ESP_LOGI(TAG, "auth ok, streaming");
             } else if (text_has(ev->data_ptr, ev->data_len, "end_turn")) {
                 ESP_LOGD(TAG, "end of Sandy's turn");
@@ -320,6 +328,7 @@ static void spk_task(void *arg) {
                 playing = true;
                 s_playing = true;
                 VOICE_FACE(MOOD_HAPPY);     // talking face
+                VOICE_LED(LED_STATE_TALKING);
                 // Restarting right after a stop = an audible mid-reply gap.
                 if (last_stop && (now_ms() - last_stop) < 2000) s_spk_gaps++;
             } else {
@@ -346,7 +355,10 @@ static void spk_task(void *arg) {
             last_stop = now_ms();
             // Done talking: back to the listening face while the session is
             // open (the session manager sets idle when it closes).
-            if (s_session_active) VOICE_FACE(MOOD_FOCUSED);
+            if (s_session_active) {
+                VOICE_FACE(MOOD_FOCUSED);
+                VOICE_LED(LED_STATE_LISTENING);
+            }
             // One line per reply: the health of the whole delivery chain.
             // rx≈played & dropped=0 & gaps=0 is a clean run.
             ESP_LOGI(TAG, "playback report: rx=%u played=%u dropped=%u gaps=%d",
@@ -684,6 +696,7 @@ static void voice_task(void *arg) {
             s_session_active = false;
             ws_close();
             VOICE_FACE(MOOD_IDLE);
+            VOICE_LED(LED_STATE_IDLE);
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }

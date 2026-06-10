@@ -20,6 +20,7 @@
 #include "sandy_ears.h"
 #include "sandy_spktest.h"
 #include "sandy_remote.h"
+#include "sandy_led.h"
 
 static const char *TAG = "main";
 
@@ -31,6 +32,7 @@ volatile sandy_mood_t g_current_mood = MOOD_IDLE;
 // Hands off while a voice conversation is running — the voice link drives the
 // face then (listening/talking), and this loop would stomp it every 300ms.
 static void _proximity_task(void *arg) {
+    bool was_near = false;
     for (;;) {
 #if ENABLE_VOICE
         if (voice_session_is_active()) {
@@ -39,7 +41,13 @@ static void _proximity_task(void *arg) {
         }
 #endif
         uint32_t d = sensor_get_distance_cm();
-        face_set_mood((d > 0 && d < 25) ? MOOD_SURPRISED : MOOD_IDLE);
+        bool near = (d > 0 && d < 25);
+        // Edge-triggered, not level-triggered: the old "set IDLE every 300ms"
+        // stomped every mood that came from anywhere else (MQTT mood commands
+        // appeared broken because of this) and would never let her fall asleep.
+        if (near && !was_near) face_set_mood(MOOD_SURPRISED);
+        if (!near && was_near) face_set_mood(MOOD_IDLE);
+        was_near = near;
         vTaskDelay(pdMS_TO_TICKS(300));
     }
 }
@@ -78,6 +86,9 @@ void app_main(void) {
     // ── Peripherals ───────────────────────────────────────────────────────────
 #if ENABLE_FACE
     ESP_ERROR_CHECK(face_init());
+#endif
+#if ENABLE_LED
+    led_init();   // non-fatal: a dead status LED shouldn't stop the robot
 #endif
 #if ENABLE_SERVO
     ESP_ERROR_CHECK(servo_init());

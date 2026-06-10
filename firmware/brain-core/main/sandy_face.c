@@ -78,6 +78,7 @@ static volatile sandy_mood_t s_mood = MOOD_IDLE;
 static int16_t  s_eye_target_h = EYE_H;
 static int16_t  s_eye_l_x0, s_eye_r_x0;   // resting eye positions
 static int64_t  s_look_until_ms;          // hold gaze toward a sound until this time
+static volatile int64_t s_last_active_ms; // last interaction, for the sleep timer
 
 // ─── Mood → look ──────────────────────────────────────────────────────────────
 typedef enum { MO_NEUTRAL, MO_SMILE, MO_BIG_SMILE, MO_FROWN, MO_OPEN, MO_FLAT, MO_SMIRK } mouth_t;
@@ -318,6 +319,20 @@ static void mood_timer_cb(lv_timer_t *t) {
     }
 }
 
+// Ignored for FACE_SLEEP_AFTER_MS while idle → doze off. Anything expressive
+// (wake word, proximity, a cloud mood) resets the clock in face_set_mood and
+// snaps her awake by simply setting a new mood.
+static void sleep_timer_cb(lv_timer_t *t) {
+    if (s_mood != MOOD_IDLE) return;
+    int64_t now = esp_timer_get_time() / 1000;
+    if (s_last_active_ms == 0) s_last_active_ms = now;   // boot counts as activity
+    if (now - s_last_active_ms > FACE_SLEEP_AFTER_MS) {
+        s_mood = MOOD_SLEEPY;
+        g_current_mood = MOOD_SLEEPY;
+        ESP_LOGI(TAG, "dozing off (idle %d min)", (int)((now - s_last_active_ms) / 60000));
+    }
+}
+
 // ─── Demo: cycle every mood so we can eyeball them on hardware ────────────────
 #define FACE_DEMO 0
 #if FACE_DEMO
@@ -447,10 +462,11 @@ static void build_face(void) {
 
     apply_look(MOOD_IDLE);
 
-    // Animations: periodic blink + idle eye drift.
+    // Animations: periodic blink + idle eye drift + dozing off when ignored.
     lv_timer_create(blink_timer_cb, 3000, NULL);
     lv_timer_create(drift_timer_cb, 600, NULL);
     lv_timer_create(mood_timer_cb, 60, NULL);
+    lv_timer_create(sleep_timer_cb, 10000, NULL);
 #if FACE_DEMO
     lv_timer_create(demo_timer_cb, 5000, NULL);   // cycle all moods, 5 s each
 #endif
@@ -531,5 +547,10 @@ void face_set_mood(sandy_mood_t mood) {
     if (mood < MOOD_COUNT) {
         s_mood = mood;
         g_current_mood = mood;
+        // Any expressed mood counts as interaction and resets the sleep clock
+        // (idle/sleepy don't, or she could never doze off).
+        if (mood != MOOD_IDLE && mood != MOOD_SLEEPY) {
+            s_last_active_ms = esp_timer_get_time() / 1000;
+        }
     }
 }
