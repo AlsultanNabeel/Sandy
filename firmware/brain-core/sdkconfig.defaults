@@ -54,3 +54,8 @@ CONFIG_LV_COLOR_16_SWAP=y
 # files), so the model partition holds just this one ~300KB wake word.
 # Swap for a custom-trained "Sandy" model later by changing this line.
 CONFIG_SR_WN_WN9_HIANDY_TTS2=y
+
+# TLS buffers from PSRAM: two TLS sessions (MQTT broker + voice WSS) ran the
+# internal heap dry — the voice handshake died with create_ssl_handle failed
+# the moment MQTT held its connection. 8MB PSRAM carries them both easily.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y

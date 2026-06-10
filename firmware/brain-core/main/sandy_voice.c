@@ -506,12 +506,14 @@ static void mic_task(void *arg) {
 #endif
 #if ENABLE_SERVO
                 // Look toward whoever called: the wake utterance is still in
-                // the smoothed L/R energies. ±25% imbalance = full swing.
+                // the smoothed L/R energies. Two close mics only differ by a
+                // few percent, so ±10% imbalance already means full swing
+                // (live tests showed bal≈4 for an off-center caller).
                 int tot = ear_l + ear_r;
                 if (tot > 0) {
                     int bal = ((ear_r - ear_l) * 100) / tot;   // -100 .. +100
                     if (VOICE_EARS_INVERT) bal = -bal;
-                    int off = bal * VOICE_EARS_SWING / 25;
+                    int off = bal * VOICE_EARS_SWING / 10;
                     if (off >  VOICE_EARS_SWING) off =  VOICE_EARS_SWING;
                     if (off < -VOICE_EARS_SWING) off = -VOICE_EARS_SWING;
                     servo_set_angle((uint8_t)(90 + off));
