@@ -80,6 +80,14 @@ static model_iface_data_t *s_wn_data;
 static int s_wn_chunk;                        // samples per detect() call
 static int16_t *s_wn_buf;                     // accumulates mic to chunk size
 static int s_wn_fill;                         // samples currently in s_wn_buf
+
+// Pre-roll: mic audio captured between the wake word and auth_ok. The WSS
+// handshake takes ~1.2s and people ask their question in the same breath as
+// the wake word — without this, those words never reach Gemini and Sandy
+// stays silent. Flushed (in order) before the first live frame. When full,
+// the OLDEST audio is kept — the question, not the trailing room noise.
+static StreamBufferHandle_t s_preroll;
+#define PREROLL_BYTES   (96 * 1024)   // 3 s at 16 kHz / 16-bit
 #else
 static const bool s_session_active = true;    // no gate: always streaming
 #endif
@@ -93,7 +101,7 @@ static const bool s_session_active = true;    // no gate: always streaming
 // WiFi delivery jitter keeps playback from underrunning (less stutter).
 #define SPK_PREBUF_BYTES    14400
 // Output volume: right-shift each sample. 2 = quarter, 1 = half, 0 = full.
-#define SPK_VOL_SHIFT       2
+#define SPK_VOL_SHIFT       1
 
 
 static int64_t now_ms(void) {
@@ -359,17 +367,30 @@ static bool wakeword_feed(const int16_t *pcm, int n) {
 }
 #endif  // ENABLE_WAKEWORD
 
-// Ship one mic frame up the WS. Drops the frame instead of blocking when the
+// Ship one chunk of mic audio up the WS. Drops it instead of blocking when the
 // session manager is mid-teardown — the mic loop must never stall, or the
 // wake-word listener stalls with it.
-static void mic_send(const int16_t *pcm, int frames) {
+static void mic_send(const void *pcm, size_t bytes) {
     if (xSemaphoreTake(s_ws_mutex, 0) != pdTRUE) return;
     if (s_client && s_authed) {
-        esp_websocket_client_send_bin(s_client, (const char *)pcm,
-                                      frames * sizeof(int16_t), pdMS_TO_TICKS(1000));
+        esp_websocket_client_send_bin(s_client, (const char *)pcm, bytes,
+                                      pdMS_TO_TICKS(1000));
     }
     xSemaphoreGive(s_ws_mutex);
 }
+
+#if ENABLE_WAKEWORD
+// Send whatever was captured while the session was still connecting, before
+// the live frame, so the first words arrive in order.
+static void preroll_flush(void) {
+    if (!s_preroll) return;
+    uint8_t tmp[1024];
+    size_t n;
+    while ((n = xStreamBufferReceive(s_preroll, tmp, sizeof(tmp), 0)) > 0) {
+        mic_send(tmp, n);
+    }
+}
+#endif
 
 // Read the mic, convert to 16-bit PCM, and stream it up while Sandy is quiet.
 static void mic_task(void *arg) {
@@ -437,6 +458,7 @@ static void mic_task(void *arg) {
             // session manager opens the WS when it sees s_wake_req.
             if (!sandy_talking && wakeword_feed(pcm, frames)) {
                 ESP_LOGI(TAG, "wake word detected");
+                if (s_preroll) xStreamBufferReset(s_preroll);  // fresh capture
                 s_wake_req = true;
                 // Local "I heard you" cue — fires on detection, before any cloud
                 // connection, so it confirms the wake word independently of the
@@ -455,12 +477,17 @@ static void mic_task(void *arg) {
                 s_session_voice_ms = now_ms();
             }
             if (s_authed && !sandy_talking) {
-                mic_send(pcm, frames);
+                preroll_flush();
+                mic_send(pcm, frames * sizeof(int16_t));
+            } else if (!s_authed && s_preroll) {
+                // Still connecting (or mid-session reconnect): capture instead
+                // of dropping, and flush once the link is authed again.
+                xStreamBufferSend(s_preroll, pcm, frames * sizeof(int16_t), 0);
             }
         }
 #else
         if (s_authed && !sandy_talking) {
-            mic_send(pcm, frames);
+            mic_send(pcm, frames * sizeof(int16_t));
         }
 #endif
 
@@ -539,6 +566,9 @@ static void voice_task(void *arg) {
     // than realtime, and the old 192 KB (~4 s) overflowed on them — the
     // overflow drops chopped whole pieces out of her sentences.
     s_spk_stream = xStreamBufferCreateWithCaps(1024 * 1024, 1, MALLOC_CAP_SPIRAM);
+#if ENABLE_WAKEWORD
+    s_preroll = xStreamBufferCreateWithCaps(PREROLL_BYTES, 1, MALLOC_CAP_SPIRAM);
+#endif
     s_ws_mutex = xSemaphoreCreateMutex();
 
     // Pin the audio tasks to core 1 (WiFi/TLS runs on core 0) and give playback
@@ -546,7 +576,7 @@ static void voice_task(void *arg) {
     // Stacks live in internal RAM — if it's exhausted these fail SILENTLY and
     // voice just never answers, so check and shout.
     if (xTaskCreatePinnedToCore(spk_task, "voice_spk", 4096, NULL, 9, NULL, 1) != pdPASS ||
-        xTaskCreatePinnedToCore(mic_task, "voice_mic", 4096, NULL, 8, NULL, 1) != pdPASS) {
+        xTaskCreatePinnedToCore(mic_task, "voice_mic", 5120, NULL, 8, NULL, 1) != pdPASS) {
         ESP_LOGE(TAG, "audio task create FAILED (heap_int free=%u largest=%u)",
                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
