@@ -12,7 +12,7 @@
 *.secret
 sandy-gcloud-key.json
 sandy/secrets.h
-esp32cam_Camera/secrets.h
+vision-core/secrets.h
 *oauth*.json
 cloud/google-tasks-oauth.json
 cloud/google-tasks-token.json
