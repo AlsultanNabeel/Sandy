@@ -300,6 +300,10 @@ async def _live_session(ws, remote: str) -> None:
             role="user",
         ),
         tools=live_tools or [],
+        # بدون هدول، التفريغ النصي ما بيوصل أبداً → _save_voice_turn ما بينحفظ
+        # → محادثات الصوت ما بتظهر بذاكرة التلي/الويب (الذاكرة الموحدة).
+        input_audio_transcription=types.AudioTranscriptionConfig(),
+        output_audio_transcription=types.AudioTranscriptionConfig(),
     )
     if gate_on:
         # التحقّق مفعّل → نطفّي الكشف التلقائي ونتحكّم بنهاية الدور يدوياً عشان
@@ -464,6 +468,13 @@ async def _live_to_device(ws, session, dispatcher, recent: "_RecentAudio") -> No
             t = response.server_content.input_transcription.text
             if t:
                 _user_buf.append(t)
+
+        # Capture Sandy's speech transcript (native-audio models don't put
+        # text in model_turn parts, so this is the only reliable source).
+        if response.server_content and response.server_content.output_transcription:
+            t = response.server_content.output_transcription.text
+            if t:
+                _sandy_buf.append(t)
 
         # Audio plus text response: relay the audio, capture the text.
         if response.server_content and response.server_content.model_turn:
