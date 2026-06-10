@@ -476,6 +476,12 @@ async def _live_to_device(ws, session, dispatcher, recent: "_RecentAudio") -> No
             if t:
                 _sandy_buf.append(t)
 
+        # Barge-in: Gemini noticed the user talking over Sandy and stopped
+        # generating — tell the device to dump its buffered audio so she
+        # actually goes quiet instead of finishing the stale reply.
+        if response.server_content and response.server_content.interrupted:
+            await loop.run_in_executor(None, _send_json, ws, {"type": "interrupted"})
+
         # Audio plus text response: relay the audio, capture the text.
         if response.server_content and response.server_content.model_turn:
             for part in response.server_content.model_turn.parts:

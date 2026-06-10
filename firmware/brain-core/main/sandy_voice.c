@@ -86,6 +86,13 @@ static volatile uint32_t s_spk_drop_bytes;   // received but didn't fit the buff
 static uint32_t s_spk_play_bytes;            // actually written to the amp
 static int s_spk_gaps;                       // playback restarts within 2s
 
+// Barge-in plumbing. flush: dump whatever is buffered and stop playing.
+// squelch: drop INCOMING audio too — after a local interrupt Gemini keeps
+// streaming the rest of the stale reply until it notices the new speech, and
+// without the squelch that tail would just start playing again.
+static volatile bool s_spk_flush;
+static volatile bool s_spk_squelch;
+
 #if ENABLE_WAKEWORD
 // Session is OPEN only between a wake word and the following silence. The WS
 // (and so the paid Gemini link) is connected only while it's open.
@@ -271,13 +278,20 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *even
                 VOICE_FACE(MOOD_FOCUSED);   // she's listening now
                 VOICE_LED(LED_STATE_LISTENING);
                 ESP_LOGI(TAG, "auth ok, streaming");
+            } else if (text_has(ev->data_ptr, ev->data_len, "interrupted")) {
+                // Server-side barge-in confirmation: stale audio dies here,
+                // whatever comes next belongs to the NEW turn.
+                s_spk_flush = true;
+                s_spk_squelch = false;
+                ESP_LOGI(TAG, "interrupted by user (server)");
             } else if (text_has(ev->data_ptr, ev->data_len, "end_turn")) {
+                s_spk_squelch = false;   // stale turn fully drained server-side
                 ESP_LOGD(TAG, "end of Sandy's turn");
             } else if (text_has(ev->data_ptr, ev->data_len, "error")) {
                 ESP_LOGW(TAG, "server error frame");
             }
         } else if (ev->op_code == 0x2 || ev->op_code == 0x0) {  // binary audio (+ continuation)
-            if (ev->data_len > 0) {
+            if (ev->data_len > 0 && !s_spk_squelch) {
                 s_last_rx_audio_ms = now_ms();
                 // Whole 16-bit samples only: a partial write that split a
                 // sample would byte-shift everything after it into loud static.
@@ -308,6 +322,20 @@ static void spk_task(void *arg) {
     int64_t first_seen = 0;   // when data first appeared while idle
     int64_t last_stop = 0;    // when playback last went idle
     for (;;) {
+        // Barge-in: dump everything buffered and go quiet. The ~180ms already
+        // inside the I2S DMA plays out, then auto-clear feeds silence.
+        if (s_spk_flush) {
+            s_spk_flush = false;
+            while (xStreamBufferReceive(s_spk_stream, buf, sizeof(buf), 0) > 0) {}
+            playing = false;
+            s_playing = false;
+            first_seen = 0;
+            last_stop = now_ms();
+            if (s_session_active) {
+                VOICE_FACE(MOOD_FOCUSED);
+                VOICE_LED(LED_STATE_LISTENING);
+            }
+        }
         if (!playing) {
             size_t avail = xStreamBufferBytesAvailable(s_spk_stream);
             if (avail == 0) {
@@ -555,8 +583,22 @@ static void mic_task(void *arg) {
 #endif
             }
         } else {
-            // Open session: hold it alive on user speech or Sandy's own audio;
-            // the manager closes it once this goes quiet for VOICE_SESSION_IDLE_MS.
+            // Barge-in: while she talks, the wake-word spotter keeps running on
+            // the raw mic — "Hi Andy" mid-reply cuts her off and hands the turn
+            // back to the user. (No AEC yet, so the wake word is the only
+            // trigger that's robust against her own voice leaking in.)
+            if (sandy_talking && wakeword_feed(pcm, frames)) {
+                ESP_LOGI(TAG, "barge-in: wake word during playback");
+                s_spk_squelch = true;     // drop the rest of the stale reply
+                s_spk_flush = true;
+                s_last_rx_audio_ms = 0;   // kill the half-duplex tail now
+                s_session_voice_ms = now_ms();
+#if ENABLE_BUZZER
+                buzzer_play(MELODY_CURIOUS);
+#endif
+            }
+            // Hold the session alive on user speech or Sandy's own audio; the
+            // manager closes it once this goes quiet for VOICE_SESSION_IDLE_MS.
             if (avg > VOICE_SESSION_VAD_LEVEL || sandy_talking) {
                 s_session_voice_ms = now_ms();
             }
