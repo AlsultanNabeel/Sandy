@@ -9,6 +9,7 @@
 #include "config.h"
 #include "secrets.h"
 #include "mqtt_client.h"
+#include "esp_crt_bundle.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_system.h"
@@ -151,9 +152,10 @@ esp_err_t mqtt_sandy_start(void) {
     esp_mqtt_client_config_t cfg = {
         .broker = {
             .address = { .uri = MQTT_BROKER_URI },
-            // ⛏️ Using skip_cert_common_name_check matches Arduino's setInsecure().
-            // Replace with proper cert embed before production.
-            .verification = { .skip_cert_common_name_check = true },
+            // Real TLS via the built-in CA bundle (same as the voice WSS link).
+            // skip_cert_common_name_check alone doesn't work here: esp-tls
+            // refuses to connect with no verification source at all.
+            .verification = { .crt_bundle_attach = esp_crt_bundle_attach },
         },
         .credentials = {
             .client_id  = MQTT_CLIENT_ID,

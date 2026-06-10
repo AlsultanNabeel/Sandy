@@ -45,6 +45,19 @@ static void _proximity_task(void *arg) {
 }
 #endif
 
+#if ENABLE_MQTT
+// MQTT joins ~20s late on purpose: its TLS handshake right at boot stacked a
+// power peak on top of the WiFi/display/voice bring-up and browned out weaker
+// supplies (power bank / laptop USB). Body control can afford to be late.
+static void _mqtt_late_start(void *arg) {
+    vTaskDelay(pdMS_TO_TICKS(20000));
+    if (mqtt_sandy_start() != ESP_OK) {
+        ESP_LOGE(TAG, "MQTT failed to start — running without cloud body control");
+    }
+    vTaskDelete(NULL);
+}
+#endif
+
 void app_main(void) {
     // reset_reason separates a brownout from a panic from a plain power-on at
     // a glance — the first thing to check when the board reboots on its own.
@@ -57,6 +70,9 @@ void app_main(void) {
 #endif
 #if ENABLE_REMOTE
     ESP_ERROR_CHECK(remote_init());   // OTA + remote log over WiFi
+    // Repeat the reset reason now that the remote log buffer exists — the
+    // line at the top of app_main is UART-only (printed before the buffer).
+    ESP_LOGI(TAG, "reset_reason=%d (9=brownout 4=panic 1=power-on)", (int)esp_reset_reason());
 #endif
 
     // ── Peripherals ───────────────────────────────────────────────────────────
@@ -93,11 +109,7 @@ void app_main(void) {
 
     // ── Network ───────────────────────────────────────────────────────────────
 #if ENABLE_MQTT
-    // Not ESP_ERROR_CHECK: cloud body-control is optional. A bad broker URI or
-    // a down broker must not brick the whole robot into a boot loop.
-    if (mqtt_sandy_start() != ESP_OK) {
-        ESP_LOGE(TAG, "MQTT failed to start — running without cloud body control");
-    }
+    xTaskCreate(_mqtt_late_start, "mqtt_late", 4096, NULL, 3, NULL);
 #endif
 
     // ── Voice link (waits for Wi-Fi, then connects to /voice) ───────────────────
