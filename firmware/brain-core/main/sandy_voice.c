@@ -559,6 +559,7 @@ static void mic_task(void *arg) {
     int32_t dc_x1 = 0, dc_y1 = 0;
     int64_t last_diag = 0;
     bool first_frame = true;
+    int gate_run = 0;   // consecutive over-gate batches while she talks
 #if ENABLE_SERVO
     // Per-mic first-difference energy (diff kills each mic's DC offset).
     // Smoothed over ~400ms; the L/R balance says which side the voice is on.
@@ -584,19 +585,29 @@ static void mic_task(void *arg) {
         int frames = bytes_read / (2 * sizeof(int32_t));
 
         // INMP441 gives 24-bit data left-justified in a 32-bit slot. Mix the two
-        // mics, shift down to 16-bit (+gain), then DC-block.
-        int64_t sum_abs = 0;
+        // mics at FULL headroom (>>16 = the top 16 of the 24 data bits — cannot
+        // clip, ever), then DC-block. The wanted gain (VOICE_MIC_GAIN_SHIFT) is
+        // applied AFTER the echo canceller: applying it here used to saturate
+        // her own speaker blasting the mics from a few cm away, and a clipped
+        // echo is nonlinear — the AEC cancelled nothing (measured live:
+        // residual avg 8000-15000 against a gate of 1500, so the cloud heard
+        // her voice as the user and she kept answering herself).
 #if ENABLE_SERVO
         int64_t sum_dl = 0, sum_dr = 0;
 #endif
         for (int i = 0; i < frames; i++) {
-            int32_t l = raw[2 * i]     >> VOICE_MIC_GAIN_SHIFT;
-            int32_t r = raw[2 * i + 1] >> VOICE_MIC_GAIN_SHIFT;
+            int32_t l = raw[2 * i]     >> 16;
+            int32_t r = raw[2 * i + 1] >> 16;
 #if ENABLE_SERVO
-            sum_dl += (l > ear_prev_l) ? (l - ear_prev_l) : (ear_prev_l - l);
-            sum_dr += (r > ear_prev_r) ? (r - ear_prev_r) : (ear_prev_r - r);
-            ear_prev_l = l;
-            ear_prev_r = r;
+            // Ears keep the old higher-gain view: they only matter for the wake
+            // utterance (she's silent then, no clipping) and the extra bits
+            // keep the L/R balance from quantizing away.
+            int32_t le = raw[2 * i]     >> VOICE_MIC_GAIN_SHIFT;
+            int32_t re = raw[2 * i + 1] >> VOICE_MIC_GAIN_SHIFT;
+            sum_dl += (le > ear_prev_l) ? (le - ear_prev_l) : (ear_prev_l - le);
+            sum_dr += (re > ear_prev_r) ? (re - ear_prev_r) : (ear_prev_r - re);
+            ear_prev_l = le;
+            ear_prev_r = re;
 #endif
             int32_t x = (l + r) / 2;
 
@@ -607,10 +618,7 @@ static void mic_task(void *arg) {
             if (y > 32767) y = 32767;
             else if (y < -32768) y = -32768;
             pcm[i] = (int16_t)y;
-            sum_abs += (y < 0) ? -y : y;
         }
-
-        int avg = (int)(sum_abs / (frames ? frames : 1));
 #if ENABLE_SERVO
         ear_l = (ear_l * 3 + (int)(sum_dl / (frames ? frames : 1))) / 4;
         ear_r = (ear_r * 3 + (int)(sum_dr / (frames ? frames : 1))) / 4;
@@ -623,7 +631,6 @@ static void mic_task(void *arg) {
         // echo-cancelled when the AEC is up and a session is running.
         int16_t *use = pcm;
 #if VOICE_AEC_ENABLE
-        bool aec_on = false;
         if (s_aec && s_session_active) {
             // Chunk the mono mic through the canceller, pulling the speaker
             // reference in lockstep (zeros when she's quiet). Output lands in
@@ -644,12 +651,6 @@ static void mic_task(void *arg) {
             if (out_n == 0) continue;   // not a full chunk yet this frame
             use = s_aec_frame;
             frames = out_n;
-            aec_on = true;
-            // VAD must look at the CLEANED signal or her own voice would hold
-            // the session open forever now that the mic stays live.
-            int64_t sa = 0;
-            for (int i = 0; i < frames; i++) sa += (use[i] < 0) ? -use[i] : use[i];
-            avg = (int)(sa / frames);
         }
 #if VOICE_AEC_FULL_DUPLEX
         // Full duplex: with the echo gone the mic stays open while she talks.
@@ -660,6 +661,22 @@ static void mic_task(void *arg) {
 #else
         const bool mic_muted = sandy_talking;
 #endif
+
+        // Re-apply the intended gain now that the canceller has seen a clean,
+        // linear signal (saturating ×16 for the default shift of 12). Everything
+        // downstream — wake word, VAD level, duplex gate, what Gemini hears —
+        // keeps the exact scale all its thresholds were tuned on. avg doubles
+        // as the VAD level and MUST come from the cleaned signal, or her own
+        // voice would hold the session open forever now that the mic stays live.
+        int64_t sum_abs = 0;
+        for (int i = 0; i < frames; i++) {
+            int32_t v = (int32_t)use[i] << (16 - VOICE_MIC_GAIN_SHIFT);
+            if (v > 32767) v = 32767;
+            else if (v < -32768) v = -32768;
+            use[i] = (int16_t)v;
+            sum_abs += (v < 0) ? -v : v;
+        }
+        int avg = (int)(sum_abs / (frames ? frames : 1));
 
 #if ENABLE_WAKEWORD
         if (!s_session_active) {
@@ -726,12 +743,28 @@ static void mic_task(void *arg) {
                 s_session_voice_ms = now_ms();
             }
             if (s_authed && !mic_muted) {
-                // While she talks, only frames with real speech energy pass —
-                // the AEC residual stays under the gate, so even imperfect
-                // cancellation can't make her answer her own echo.
+                // While she talks, only SUSTAINED real-speech energy opens the
+                // stream: a single over-gate batch could be a residual spike of
+                // her own echo, VOICE_DUPLEX_GATE_RUN in a row (~100ms) is a
+                // human. Pending batches stash in the (idle during playback)
+                // preroll, so the interruption's onset still arrives once the
+                // run qualifies — nothing of the user's sentence is lost.
+                if (!sandy_talking) gate_run = 0;
                 if (!sandy_talking || avg > VOICE_DUPLEX_GATE_LEVEL) {
-                    preroll_flush();
-                    mic_send(use, frames * sizeof(int16_t));
+                    if (sandy_talking && ++gate_run < VOICE_DUPLEX_GATE_RUN) {
+                        if (s_preroll) {
+                            xStreamBufferSend(s_preroll, use,
+                                              frames * sizeof(int16_t), 0);
+                        }
+                    } else {
+                        preroll_flush();
+                        mic_send(use, frames * sizeof(int16_t));
+                    }
+                } else if (gate_run) {
+                    // The spike died before qualifying — it was echo, not a
+                    // voice. Drop the stash with it.
+                    gate_run = 0;
+                    if (s_preroll) xStreamBufferReset(s_preroll);
                 }
             } else if (!s_authed && s_preroll) {
                 // Still connecting (or mid-session reconnect): capture instead
@@ -800,6 +833,10 @@ static void ws_close(void) {
         esp_websocket_client_destroy(s_client);
         s_client = NULL;
     }
+    // Clear again AFTER the teardown: a late auth_ok event can land while
+    // stop() is mid-flight and flip the flag back on for good (seen live:
+    // authed=1 with no session, for minutes).
+    s_authed = false;
     xSemaphoreGive(s_ws_mutex);
 }
 

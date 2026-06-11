@@ -120,9 +120,12 @@
 // Gemini Live: 16 kHz audio in, 24 kHz out.
 #define VOICE_IN_RATE           16000
 #define VOICE_OUT_RATE          24000
-// Down-shift for the 32-bit INMP441 sample; also acts as gain. Tune on hardware.
+// Mic gain: the mono mix is amplified ×2^(16-this) AFTER the echo canceller.
 // 12 (≈+12 dB over 14) so normal speech reaches Gemini's voice-activity
-// threshold from a comfortable distance.
+// threshold from a comfortable distance. Capture itself always runs at full
+// headroom (>>16, clip-proof): gain at capture used to saturate the mics
+// whenever her own speaker (a few cm behind them) played, and a clipped echo
+// is nonlinear — the AEC cancelled nothing and she answered her own voice.
 #define VOICE_MIC_GAIN_SHIFT    12
 // Keep the mic muted this long after Sandy's last audio (avoids echo).
 #define VOICE_HALF_DUPLEX_TAIL_MS  400
@@ -170,3 +173,8 @@
 // The final guard against her answering her own echo. Tune with `diag mic=`
 // readings taken while she speaks.
 #define VOICE_DUPLEX_GATE_LEVEL    1500
+// ...and only after this many consecutive over-gate batches (~33ms each):
+// a lone spike is echo residual sneaking through, a 100ms run is a human.
+// The pending batches are stashed and sent once the run qualifies, so the
+// start of the interruption still reaches Gemini.
+#define VOICE_DUPLEX_GATE_RUN      3
