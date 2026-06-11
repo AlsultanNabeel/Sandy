@@ -151,3 +151,17 @@
 // utterance itself. Tune with the `ears:` log line.
 #define VOICE_EARS_SWING           35   // max degrees off center (90)
 #define VOICE_EARS_INVERT          1    // set 1 if she turns the wrong way
+
+// ─── Acoustic echo cancellation (esp-sr AEC) ──────────────────────────────────
+// Subtract Sandy's own speaker audio from the mic signal so she hears the user
+// even while she's talking — this is what makes natural barge-in possible.
+#define VOICE_AEC_ENABLE           1
+#define VOICE_AEC_FILTER_LEN       4    // adaptive filter blocks (esp-sr recommends 4)
+// The captured reference leads the acoustic echo by roughly the TX DMA depth
+// (~180ms of audio sits in hardware before the amp plays it), so playback
+// starts by pre-filling this much silence into the reference queue.
+#define VOICE_AEC_REF_DELAY_MS     180
+// 1 = the mic keeps streaming to the cloud while she talks (full duplex —
+//     talk over her and Gemini interrupts itself). Falls back to half-duplex
+//     automatically if the AEC engine failed to start.
+#define VOICE_AEC_FULL_DUPLEX      1

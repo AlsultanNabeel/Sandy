@@ -41,6 +41,10 @@
 #include "model_path.h"
 #endif
 
+#if VOICE_AEC_ENABLE
+#include "esp_aec.h"
+#endif
+
 #include "sandy_wifi.h"
 #if ENABLE_BUZZER
 #include "sandy_buzzer.h"
@@ -103,6 +107,19 @@ static volatile int64_t s_squelch_until_ms;
 // byte-shifted — that's the static that appears out of nowhere and sticks.
 static uint8_t s_rx_carry;
 static volatile bool s_rx_has_carry;
+
+#if VOICE_AEC_ENABLE
+// Echo canceller: spk_task writes a 16k copy of everything the amp plays into
+// s_ref_stream; mic_task pulls it in lockstep and aec_process() strips it from
+// the mic signal. With that working, the mic stays OPEN while Sandy talks.
+static aec_handle_t *s_aec;
+static StreamBufferHandle_t s_ref_stream;     // 16k mono reference (PSRAM)
+static int s_aec_chunk;                       // samples per aec_process() call
+static int16_t *s_aec_stage;                  // collects mic mono to chunk size
+static int s_aec_fill;
+static int16_t *s_aec_ref, *s_aec_out;        // aligned per-chunk buffers
+static int16_t *s_aec_frame;                  // processed output for one frame
+#endif
 
 #if ENABLE_WAKEWORD
 // Session is OPEN only between a wake word and the following silence. The WS
@@ -386,6 +403,17 @@ static void spk_task(void *arg) {
                 s_playing = true;
                 VOICE_FACE(MOOD_HAPPY);     // talking face
                 VOICE_LED(LED_STATE_TALKING);
+#if VOICE_AEC_ENABLE
+                // Fresh playback: pre-fill the reference with silence equal to
+                // the TX DMA depth, so the reference lines up with the moment
+                // her audio actually leaves the speaker.
+                if (s_ref_stream && xStreamBufferIsEmpty(s_ref_stream)) {
+                    static const int16_t zeros[320] = {0};   // 20ms pieces
+                    for (int ms = 0; ms < VOICE_AEC_REF_DELAY_MS; ms += 20) {
+                        xStreamBufferSend(s_ref_stream, zeros, sizeof(zeros), 0);
+                    }
+                }
+#endif
                 // Restarting right after a stop = an audible mid-reply gap.
                 if (last_stop && (now_ms() - last_stop) < 2000) s_spk_gaps++;
             } else {
@@ -400,6 +428,21 @@ static void spk_task(void *arg) {
             int16_t *s = (int16_t *)buf;
             for (int i = 0; i < (int)(n / sizeof(int16_t)); i++) {
                 s[i] = (int16_t)(((int32_t)s[i] * SPK_VOL_MUL) >> SPK_VOL_SHIFT);
+            }
+#endif
+#if VOICE_AEC_ENABLE
+            // Echo reference: exactly what the amp will play (post-volume),
+            // downsampled 24k -> 16k (2 out of every 3 samples) to match the
+            // mic rate. Static buffer — this task is the only writer.
+            if (s_ref_stream) {
+                static int16_t ref[SPK_CHUNK_BYTES / 3];
+                int ns = (int)(n / sizeof(int16_t)), k = 0;
+                int16_t *sp = (int16_t *)buf;
+                for (int i = 0; i + 2 < ns; i += 3) {
+                    ref[k++] = sp[i];
+                    ref[k++] = (int16_t)(((int32_t)sp[i + 1] + sp[i + 2]) >> 1);
+                }
+                xStreamBufferSend(s_ref_stream, ref, k * sizeof(int16_t), 0);
             }
 #endif
             size_t written = 0;
@@ -570,14 +613,62 @@ static void mic_task(void *arg) {
         ear_r = (ear_r * 3 + (int)(sum_dr / (frames ? frames : 1))) / 4;
 #endif
 
-        // Half-duplex: mute the mic only while we're ACTUALLY playing Sandy's
-        // audio (plus a short tail), not merely when the buffer is non-empty —
-        // a stuck buffered chunk used to mute the mic forever.
         bool sandy_talking = s_playing ||
                              (now_ms() - s_last_rx_audio_ms) < VOICE_HALF_DUPLEX_TAIL_MS;
 
+        // What downstream (wake word, VAD, cloud) hears: raw mic by default,
+        // echo-cancelled when the AEC is up and a session is running.
+        int16_t *use = pcm;
+#if VOICE_AEC_ENABLE
+        bool aec_on = false;
+        if (s_aec && s_session_active) {
+            // Chunk the mono mic through the canceller, pulling the speaker
+            // reference in lockstep (zeros when she's quiet). Output lands in
+            // its own buffer; sample count can differ by < one chunk per loop.
+            int out_n = 0;
+            for (int i = 0; i < frames; i++) {
+                s_aec_stage[s_aec_fill++] = pcm[i];
+                if (s_aec_fill == s_aec_chunk) {
+                    s_aec_fill = 0;
+                    size_t want = (size_t)s_aec_chunk * sizeof(int16_t);
+                    size_t got = xStreamBufferReceive(s_ref_stream, s_aec_ref, want, 0);
+                    if (got < want) memset((uint8_t *)s_aec_ref + got, 0, want - got);
+                    aec_process(s_aec, s_aec_stage, s_aec_ref, s_aec_out);
+                    memcpy(s_aec_frame + out_n, s_aec_out, want);
+                    out_n += s_aec_chunk;
+                }
+            }
+            if (out_n == 0) continue;   // not a full chunk yet this frame
+            use = s_aec_frame;
+            frames = out_n;
+            aec_on = true;
+            // VAD must look at the CLEANED signal or her own voice would hold
+            // the session open forever now that the mic stays live.
+            int64_t sa = 0;
+            for (int i = 0; i < frames; i++) sa += (use[i] < 0) ? -use[i] : use[i];
+            avg = (int)(sa / frames);
+        }
+#if VOICE_AEC_FULL_DUPLEX
+        // Full duplex: with the echo gone the mic stays open while she talks.
+        bool mic_muted = s_aec ? false : sandy_talking;
+#else
+        bool mic_muted = sandy_talking;
+#endif
+#else
+        const bool mic_muted = sandy_talking;
+#endif
+
 #if ENABLE_WAKEWORD
         if (!s_session_active) {
+#if VOICE_AEC_ENABLE
+            // Stale reference from the closed session would wreck the next
+            // one's alignment; this task is the reader, so draining is safe.
+            if (s_ref_stream && !xStreamBufferIsEmpty(s_ref_stream)) {
+                while (xStreamBufferReceive(s_ref_stream, s_aec_ref,
+                                            (size_t)s_aec_chunk * sizeof(int16_t), 0) > 0) {}
+                s_aec_fill = 0;
+            }
+#endif
             // Idle: listen locally for the wake word, stream nothing up. The
             // session manager opens the WS when it sees s_wake_req.
             if (!sandy_talking && wakeword_feed(pcm, frames)) {
@@ -612,11 +703,10 @@ static void mic_task(void *arg) {
 #endif
             }
         } else {
-            // Barge-in: while she talks, the wake-word spotter keeps running on
-            // the raw mic — "Hi Andy" mid-reply cuts her off and hands the turn
-            // back to the user. (No AEC yet, so the wake word is the only
-            // trigger that's robust against her own voice leaking in.)
-            if (sandy_talking && wakeword_feed(pcm, frames)) {
+            // Barge-in: the wake-word spotter keeps running while she talks —
+            // on the echo-cancelled signal when AEC is up (hears you over her
+            // easily), on the raw mic otherwise (works when you're close/loud).
+            if (sandy_talking && wakeword_feed(use, frames)) {
                 ESP_LOGI(TAG, "barge-in: wake word during playback");
                 s_squelch_until_ms = now_ms() + SPK_SQUELCH_MS;  // stale tail only
                 s_rx_has_carry = false;
@@ -632,18 +722,18 @@ static void mic_task(void *arg) {
             if (avg > VOICE_SESSION_VAD_LEVEL || sandy_talking) {
                 s_session_voice_ms = now_ms();
             }
-            if (s_authed && !sandy_talking) {
+            if (s_authed && !mic_muted) {
                 preroll_flush();
-                mic_send(pcm, frames * sizeof(int16_t));
+                mic_send(use, frames * sizeof(int16_t));
             } else if (!s_authed && s_preroll) {
                 // Still connecting (or mid-session reconnect): capture instead
                 // of dropping, and flush once the link is authed again.
-                xStreamBufferSend(s_preroll, pcm, frames * sizeof(int16_t), 0);
+                xStreamBufferSend(s_preroll, use, frames * sizeof(int16_t), 0);
             }
         }
 #else
-        if (s_authed && !sandy_talking) {
-            mic_send(pcm, frames * sizeof(int16_t));
+        if (s_authed && !mic_muted) {
+            mic_send(use, frames * sizeof(int16_t));
         }
 #endif
 
@@ -727,6 +817,54 @@ static void voice_task(void *arg) {
 #endif
     s_ws_mutex = xSemaphoreCreateMutex();
 
+#if VOICE_AEC_ENABLE
+    // Echo canceller: internal RAM first for speed, PSRAM as the fallback.
+    // If neither works the voice link still runs — just half-duplex.
+    s_ref_stream = xStreamBufferCreateWithCaps(32 * 1024, 1, MALLOC_CAP_SPIRAM);
+    aec_config_t acfg = {
+        .mic_num = 1, .ref_num = 1, .out_num = 1,
+        .filter_length = VOICE_AEC_FILTER_LEN,
+        .sample_rate = VOICE_IN_RATE,
+        .caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT,
+        .mode = AEC_MODE_SR_LOW_COST,
+        .nlp_level = AEC_NLP_LEVEL_AGGR,
+    };
+    ESP_LOGI(TAG, "AEC init (heap_int=%u)...",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    s_aec = aec_create_from_config(&acfg);
+    if (!s_aec) {
+        acfg.caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+        s_aec = aec_create_from_config(&acfg);
+    }
+    ESP_LOGI(TAG, "AEC create done (%p)", (void *)s_aec);
+    if (s_aec) {
+        s_aec_chunk = aec_get_chunksize(s_aec);
+        size_t cb = (size_t)s_aec_chunk * sizeof(int16_t);
+        s_aec_stage = heap_caps_aligned_alloc(16, cb, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        s_aec_ref   = heap_caps_aligned_alloc(16, cb, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        s_aec_out   = heap_caps_aligned_alloc(16, cb, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        s_aec_frame = heap_caps_malloc((MIC_FRAME_SAMPLES + s_aec_chunk) * sizeof(int16_t),
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!s_aec_stage || !s_aec_ref || !s_aec_out || !s_aec_frame) {
+            ESP_LOGE(TAG, "AEC buffer alloc failed — half-duplex fallback");
+            aec_destroy(s_aec);
+            s_aec = NULL;
+        } else {
+            ESP_LOGI(TAG, "AEC up: chunk=%d filter=%d full_duplex=%d",
+                     s_aec_chunk, VOICE_AEC_FILTER_LEN, (int)VOICE_AEC_FULL_DUPLEX);
+        }
+    } else {
+        ESP_LOGW(TAG, "AEC create failed — half-duplex fallback");
+    }
+#endif
+
+#if ENABLE_WAKEWORD
+    // BEFORE the audio tasks exist: mic_task feeds the spotter from its very
+    // first frame, and a half-initialized WakeNet is a LoadProhibited panic
+    // (we lost exactly that race once when AEC init shifted the timing).
+    bool wn_ok = wakeword_init();
+#endif
+
     // Pin the audio tasks to core 1 (WiFi/TLS runs on core 0) and give playback
     // the higher priority so Sandy's voice never gets starved → no stutter.
     // Stacks live in internal RAM — if it's exhausted these fail SILENTLY and
@@ -739,7 +877,7 @@ static void voice_task(void *arg) {
     }
 
 #if ENABLE_WAKEWORD
-    if (!wakeword_init()) {
+    if (!wn_ok) {
         // No model packed — fall back to an always-on session so voice still
         // works; just without the cost gate.
         ESP_LOGW(TAG, "wake word unavailable; voice stays always-on");
@@ -779,7 +917,8 @@ static void voice_task(void *arg) {
 }
 
 esp_err_t voice_init(void) {
-    xTaskCreate(voice_task, "voice", 6144, NULL, 5, NULL);
+    // 12KB: aec_create_from_config runs on this stack and goes deep.
+    xTaskCreate(voice_task, "voice", 12288, NULL, 5, NULL);
     return ESP_OK;
 }
 
