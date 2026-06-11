@@ -87,11 +87,22 @@ static uint32_t s_spk_play_bytes;            // actually written to the amp
 static int s_spk_gaps;                       // playback restarts within 2s
 
 // Barge-in plumbing. flush: dump whatever is buffered and stop playing.
-// squelch: drop INCOMING audio too — after a local interrupt Gemini keeps
-// streaming the rest of the stale reply until it notices the new speech, and
-// without the squelch that tail would just start playing again.
+// squelch: drop INCOMING audio briefly too — after a local interrupt the
+// server may still be streaming the stale reply's tail. Time-bounded, not
+// flag-bounded: Gemini usually finished the turn long before she finishes
+// SPEAKING it (it generates faster than realtime), so an "until end_turn"
+// squelch would wait for a signal that already passed and eat her NEXT
+// reply instead.
 static volatile bool s_spk_flush;
-static volatile bool s_spk_squelch;
+static volatile int64_t s_squelch_until_ms;
+#define SPK_SQUELCH_MS  1500
+
+// One spare byte so the jitter buffer only ever holds WHOLE 16-bit samples.
+// WS fragments split at arbitrary (odd) byte offsets; if an odd byte count
+// ever slipped in around a drop or a squelch window, every later sample read
+// byte-shifted — that's the static that appears out of nowhere and sticks.
+static uint8_t s_rx_carry;
+static volatile bool s_rx_has_carry;
 
 #if ENABLE_WAKEWORD
 // Session is OPEN only between a wake word and the following silence. The WS
@@ -282,25 +293,43 @@ static void on_ws_event(void *arg, esp_event_base_t base, int32_t id, void *even
                 // Server-side barge-in confirmation: stale audio dies here,
                 // whatever comes next belongs to the NEW turn.
                 s_spk_flush = true;
-                s_spk_squelch = false;
+                s_squelch_until_ms = 0;
+                s_rx_has_carry = false;
                 ESP_LOGI(TAG, "interrupted by user (server)");
             } else if (text_has(ev->data_ptr, ev->data_len, "end_turn")) {
-                s_spk_squelch = false;   // stale turn fully drained server-side
+                s_squelch_until_ms = 0;   // stale turn fully drained server-side
                 ESP_LOGD(TAG, "end of Sandy's turn");
             } else if (text_has(ev->data_ptr, ev->data_len, "error")) {
                 ESP_LOGW(TAG, "server error frame");
             }
         } else if (ev->op_code == 0x2 || ev->op_code == 0x0) {  // binary audio (+ continuation)
-            if (ev->data_len > 0 && !s_spk_squelch) {
+            if (ev->data_len > 0 && now_ms() >= s_squelch_until_ms) {
                 s_last_rx_audio_ms = now_ms();
-                // Whole 16-bit samples only: a partial write that split a
-                // sample would byte-shift everything after it into loud static.
+                const uint8_t *p = (const uint8_t *)ev->data_ptr;
+                size_t len = (size_t)ev->data_len;
+                s_spk_rx_bytes += len;
+                // Re-pair a byte carried from the previous fragment so the
+                // buffer only ever sees whole samples.
+                if (s_rx_has_carry) {
+                    uint8_t pair[2] = { s_rx_carry, p[0] };
+                    s_rx_has_carry = false;
+                    if (xStreamBufferSpacesAvailable(s_spk_stream) >= 2) {
+                        xStreamBufferSend(s_spk_stream, pair, 2, 0);
+                    } else {
+                        s_spk_drop_bytes += 2;
+                    }
+                    p++;
+                    len--;
+                }
+                if (len & 1) {           // stash the trailing half-sample
+                    s_rx_carry = p[len - 1];
+                    s_rx_has_carry = true;
+                    len--;
+                }
                 size_t space = xStreamBufferSpacesAvailable(s_spk_stream) & ~(size_t)1;
-                size_t want  = (size_t)ev->data_len;
-                size_t n     = want < space ? want : space;
-                xStreamBufferSend(s_spk_stream, ev->data_ptr, n, 0);
-                s_spk_rx_bytes += want;
-                if (n < want) s_spk_drop_bytes += want - n;
+                size_t n = len < space ? len : space;
+                xStreamBufferSend(s_spk_stream, p, n, 0);
+                if (n < len) s_spk_drop_bytes += len - n;
             }
         }
         break;
@@ -589,7 +618,8 @@ static void mic_task(void *arg) {
             // trigger that's robust against her own voice leaking in.)
             if (sandy_talking && wakeword_feed(pcm, frames)) {
                 ESP_LOGI(TAG, "barge-in: wake word during playback");
-                s_spk_squelch = true;     // drop the rest of the stale reply
+                s_squelch_until_ms = now_ms() + SPK_SQUELCH_MS;  // stale tail only
+                s_rx_has_carry = false;
                 s_spk_flush = true;
                 s_last_rx_audio_ms = 0;   // kill the half-duplex tail now
                 s_session_voice_ms = now_ms();
