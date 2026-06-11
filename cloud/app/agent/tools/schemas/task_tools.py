@@ -59,11 +59,15 @@ def _call_task(params: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]
 def task_create(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
     titles = args.get("titles")
     due = args.get("due", "")
+    extras = {
+        "priority": args.get("priority", ""),
+        "project": args.get("project", ""),
+    }
     intensity = _persona_intensity(ctx)
     if titles and isinstance(titles, list):
         created = []
         for t in titles:
-            r = _call_task({"action": "create", "text": str(t), "due_text": due, "notes": args.get("notes", "")}, ctx)
+            r = _call_task({"action": "create", "text": str(t), "due_text": due, "notes": args.get("notes", ""), **extras}, ctx)
             if r.get("handled"):
                 created.append(str(t))
         return {"handled": True, "reply": _task_create_reply(created, due, intensity) if created else "تم."}
@@ -72,6 +76,7 @@ def task_create(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
         "text": args.get("title", ""),
         "due_text": due,
         "notes": args.get("notes", ""),
+        **extras,
     }, ctx)
     if result.get("handled"):
         result["reply"] = _task_create_reply([args.get("title", "")], due, intensity)
@@ -135,6 +140,8 @@ TASK_TOOLS = [
                 },
                 "notes": {"type": "string", "description": "ملاحظة اختيارية"},
                 "due": {"type": "string", "description": "تاريخ الاستحقاق (ISO أو وصف مثل 'بكرا')"},
+                "priority": {"type": "string", "description": "الأولوية: high | normal | low (اختياري)"},
+                "project": {"type": "string", "description": "اسم المشروع/المجموعة اللي تنتمي لها المهمة (اختياري)"},
             },
             "required": [],
         },

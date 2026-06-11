@@ -628,6 +628,56 @@ def create_telegram_webhook_app(
             telegram_bot.answer_callback_query(call.id, msg[:200])
             telegram_bot.send_message(call.message.chat.id, msg)
 
+        @telegram_bot.callback_query_handler(
+            func=lambda call: call.data.startswith("remsnz:")
+            or call.data.startswith("remdone:")
+        )
+        def handle_reminder_buttons(call):
+            """Snooze/done buttons under a delivered reminder (owner only)."""
+            from app.config import OWNER_CHAT_ID as _owner
+            from app.utils.user_profiles import active_user_profile_context
+
+            if str(call.message.chat.id) != str(_owner or ""):
+                telegram_bot.answer_callback_query(call.id, "هذا خاص بنبيل 😊")
+                return
+
+            owner_profile = {
+                "chat_id": str(_owner),
+                "name": "",
+                "relation": "owner",
+                "tone": "casual",
+                "permissions": "all",
+            }
+            parts = call.data.split(":")
+            try:
+                telegram_bot.edit_message_reply_markup(
+                    call.message.chat.id, call.message.message_id, reply_markup=None
+                )
+            except Exception:
+                pass
+
+            if parts[0] == "remsnz" and len(parts) == 3:
+                from app.features.reminders_store import snooze_reminder
+
+                minutes = int(parts[2])
+                with active_user_profile_context(owner_profile):
+                    res = snooze_reminder(parts[1], minutes)
+                if res.get("success"):
+                    label = "بكرة" if minutes >= 1440 else f"{minutes} دقيقة"
+                    msg = f"⏰ تمام، بذكرك بعد {label}"
+                else:
+                    msg = "ما قدرت أأجّل التذكير"
+            elif parts[0] == "remdone" and len(parts) == 2:
+                from app.features.reminders_store import complete_reminder
+
+                with active_user_profile_context(owner_profile):
+                    ok = complete_reminder(parts[1])
+                msg = "✅ تمام، سكرت التذكير" if ok else "ما لقيت التذكير"
+            else:
+                msg = "زر غير صالح"
+            telegram_bot.answer_callback_query(call.id, msg[:200])
+            telegram_bot.send_message(call.message.chat.id, msg)
+
     # Auth endpoints
     @app.route("/api/auth", methods=["POST"])
     def web_auth():

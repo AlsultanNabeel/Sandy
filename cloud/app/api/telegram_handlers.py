@@ -1638,7 +1638,7 @@ def register_basic_telegram_handlers(
                 if _btn_action in {"complete", "delete"} and _task_id:
                     try:
                         import telebot.types as _tg
-                        from app.features.google_tasks import load_tasks as _load_tasks
+                        from app.features.tasks_store import load_tasks as _load_tasks
                         from app.agent.pending import (
                             create_pending_action as _make_pending,
                         )

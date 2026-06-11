@@ -1,7 +1,7 @@
-"""Web API for reminders (Google Calendar) and tasks (Google Tasks).
+"""Web API for reminders and tasks — native MongoDB stores.
 
-The owner gets real CRUD straight against Google: add/edit/delete here change
-the actual Google Calendar and Google Tasks, just like the Telegram bot. A
+The owner gets real CRUD against sandy_reminders/sandy_tasks, the same
+collections the Telegram bot and the voice channel use. A
 guest (visitor page) sees the same tabs but with obviously-fake demo data and
 no mutating endpoints, so the page looks alive without exposing anything private.
 
@@ -44,13 +44,13 @@ _DEMO_TASKS_DONE = [
 
 
 def register_productivity_api(app, mongo_db=None):
-    # Reminders (Google Calendar)
+    # Reminders (native store)
     @app.route("/api/reminders", methods=["GET"])
     @require_auth
     def api_list_reminders(claims):
         if claims.get("role") != "owner":
             return jsonify({"items": _DEMO_REMINDERS, "demo": True}), 200
-        from app.features.google_calendar import list_sandy_reminders
+        from app.features.reminders_store import list_sandy_reminders
         with active_user_profile_context(_OWNER_PROFILE):
             items = list_sandy_reminders(max_results=50)
         slim = [
@@ -73,27 +73,26 @@ def register_productivity_api(app, mongo_db=None):
         remind_at = (body.get("remind_at") or "").strip()
         if not text or not remind_at:
             return jsonify({"error": "text_and_remind_at_required"}), 400
-        from app.features.google_calendar import add_calendar_event
+        from app.features.reminders_store import add_reminder
         with active_user_profile_context(_OWNER_PROFILE):
-            res = add_calendar_event(
-                title=text,
-                start_iso=remind_at,
-                description=f"Reminder created by Sandy: {text}",
-                reminder_minutes=0,
+            res = add_reminder(
+                text=text,
+                remind_at_iso=remind_at,
+                recurrence=(body.get("recurrence") or "").strip(),
             )
         if res.get("success"):
             return jsonify({"ok": True}), 200
         return jsonify({"error": res.get("error", "failed")}), 400
 
-    @app.route("/api/reminders/<event_id>", methods=["DELETE"])
+    @app.route("/api/reminders/<reminder_id>", methods=["DELETE"])
     @require_owner
-    def api_delete_reminder(event_id, claims):
-        from app.features.google_calendar import delete_calendar_event_by_id
+    def api_delete_reminder(reminder_id, claims):
+        from app.features.reminders_store import delete_reminder
         with active_user_profile_context(_OWNER_PROFILE):
-            ok = delete_calendar_event_by_id(event_id)
+            ok = delete_reminder(reminder_id)
         return jsonify({"ok": bool(ok)}), (200 if ok else 400)
 
-    # Tasks (Google Tasks)
+    # Tasks (native store)
     @app.route("/api/tasks", methods=["GET"])
     @require_auth
     def api_list_tasks(claims):
@@ -101,7 +100,7 @@ def register_productivity_api(app, mongo_db=None):
         if claims.get("role") != "owner":
             demo = _DEMO_TASKS_DONE if completed else _DEMO_TASKS
             return jsonify({"items": demo, "demo": True}), 200
-        from app.features.google_tasks import load_tasks, load_completed_tasks
+        from app.features.tasks_store import load_tasks, load_completed_tasks
         with active_user_profile_context(_OWNER_PROFILE):
             items = (
                 load_completed_tasks(mongo_db=mongo_db)
@@ -128,7 +127,7 @@ def register_productivity_api(app, mongo_db=None):
         due = (body.get("due") or "").strip()
         if not text:
             return jsonify({"error": "text_required"}), 400
-        from app.features.google_tasks import add_task
+        from app.features.tasks_store import add_task
         with active_user_profile_context(_OWNER_PROFILE):
             tid = add_task(text, due_iso=due, mongo_db=mongo_db)
         if tid:
@@ -139,7 +138,7 @@ def register_productivity_api(app, mongo_db=None):
     @require_owner
     def api_update_task(task_id, claims):
         body = request.get_json(silent=True) or {}
-        from app.features.google_tasks import (
+        from app.features.tasks_store import (
             rename_task, complete_task, uncomplete_task,
         )
         ok = True
@@ -157,7 +156,7 @@ def register_productivity_api(app, mongo_db=None):
     @app.route("/api/tasks/<task_id>", methods=["DELETE"])
     @require_owner
     def api_delete_task(task_id, claims):
-        from app.features.google_tasks import delete_task
+        from app.features.tasks_store import delete_task
         with active_user_profile_context(_OWNER_PROFILE):
             ok = delete_task(task_id, mongo_db=mongo_db)
         return jsonify({"ok": bool(ok)}), (200 if ok else 400)

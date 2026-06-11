@@ -168,7 +168,7 @@ def _exec_reminder_delete_all(
     mongo_db,
     save_session_fn,
 ) -> Dict[str, Any]:
-    from app.features.google_calendar import delete_all_sandy_reminders
+    from app.features.reminders_store import delete_all_sandy_reminders
     deleted_count = delete_all_sandy_reminders()
     clear_pending_action(session)
     save_session_fn(session, session_file=session_file, mongo_db=mongo_db)

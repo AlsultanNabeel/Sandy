@@ -59,7 +59,7 @@ def _dedup(items: List[Dict]) -> List[Dict]:
 
 
 def build_morning_briefing(*, memory: Dict[str, Any], mongo_db, tasks_file) -> str:
-    from app.features.google_tasks import load_tasks
+    from app.features.tasks_store import load_tasks
     from app.features.google_calendar import list_events_for_date_range
     from app.features.weather import get_weather, format_weather_for_prompt
 

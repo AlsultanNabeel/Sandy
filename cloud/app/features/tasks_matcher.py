@@ -92,7 +92,7 @@ def resolve_task_reference_for_write(
     tasks_file=None,
     aliases=None,
 ) -> Dict[str, Any]:
-    from app.features.google_tasks import load_tasks  # lazy import to avoid a circular import
+    from app.features.tasks_store import load_tasks  # lazy import to avoid a circular import
 
     tasks = load_tasks(mongo_db=mongo_db, tasks_file=tasks_file)
     active = [t for t in tasks if not t.get("done", False)]
@@ -264,7 +264,7 @@ def resolve_completed_task_reference_for_write(
     tasks_file=None,
     aliases=None,
 ) -> Dict[str, Any]:
-    from app.features.google_tasks import (
+    from app.features.tasks_store import (
         load_completed_tasks,
     )  # lazy import to avoid a circular import
 

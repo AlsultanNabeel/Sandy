@@ -90,7 +90,7 @@ def format_tasks_for_briefing(
 
 
 def build_task_display(mongo_db=None, tasks_file=None):
-    from app.features.google_tasks import load_tasks  # lazy import to avoid a circular import
+    from app.features.tasks_store import load_tasks  # lazy import to avoid a circular import
 
     tasks = load_tasks(mongo_db=mongo_db, tasks_file=tasks_file)
     active_tasks = [t for t in tasks if not t.get("done", False)]
@@ -114,7 +114,7 @@ def build_task_display(mongo_db=None, tasks_file=None):
 
 
 def build_completed_task_display(mongo_db=None, tasks_file=None):
-    from app.features.google_tasks import (
+    from app.features.tasks_store import (
         load_completed_tasks,
     )  # lazy import to avoid a circular import
 

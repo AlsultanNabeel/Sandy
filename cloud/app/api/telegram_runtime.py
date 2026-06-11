@@ -435,6 +435,25 @@ def configure_sandy_scheduler(
         except Exception as e:
             print(f"[Briefing] Error: {e}")
 
+    def _reminder_keyboard(reminder):
+        """Snooze/done buttons under every delivered reminder."""
+        import telebot.types as tg_types
+
+        rid = str(reminder.get("id", "") or "")
+        if not rid:
+            return None
+        kb = tg_types.InlineKeyboardMarkup()
+        kb.row(
+            tg_types.InlineKeyboardButton(
+                "⏰ أجّل نص ساعة", callback_data=f"remsnz:{rid}:30"
+            ),
+            tg_types.InlineKeyboardButton(
+                "🌅 بكرة", callback_data=f"remsnz:{rid}:1440"
+            ),
+        )
+        kb.row(tg_types.InlineKeyboardButton("✅ تم", callback_data=f"remdone:{rid}"))
+        return kb
+
     def run_owner_reminders():
         if not owner_chat_id:
             return None
@@ -442,6 +461,7 @@ def configure_sandy_scheduler(
             return check_reminders_fn(
                 send_message_fn=telegram_bot.send_message,
                 user_chat_id=owner_chat_id,
+                keyboard_builder=_reminder_keyboard,
             )
 
     def log_memory_usage():

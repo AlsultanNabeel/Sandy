@@ -9,10 +9,10 @@ from app.agent.pending import create_pending_action
 from app.agent.deep_context import record_last_action
 from app.agent.conflict_resolution import run_conflict_check_after_task_add
 
-from app.features.google_calendar import (
+from app.features.calendar_time_parser import (
     parse_reminder_time_ai,
 )
-from app.features.google_tasks import (
+from app.features.tasks_store import (
     add_task,
     build_task_display,
     build_completed_task_display,
@@ -1381,6 +1381,8 @@ def _handle_create(
     task_due_iso: str,
     task_due_text: str,
     task_notes: str,
+    task_priority: str = "",
+    task_project: str = "",
     *,
     session: Dict[str, Any],
     session_file,
@@ -1469,6 +1471,8 @@ def _handle_create(
         notes=task_notes,
         mongo_db=mongo_db,
         tasks_file=tasks_file,
+        priority=task_priority,
+        project=task_project,
     )
     if task_id:
         session["_last_created_task_id"] = task_id
@@ -1785,5 +1789,11 @@ def handle_task_action(
         return _handle_bulk_update_due_date(params, **_with_ai)
     else:  # create
         return _handle_create(
-            task_text, task_due_iso, task_due_text, task_notes, **_with_ai
+            task_text,
+            task_due_iso,
+            task_due_text,
+            task_notes,
+            task_priority=str(params.get("priority", "") or ""),
+            task_project=str(params.get("project", "") or ""),
+            **_with_ai,
         )

@@ -7,12 +7,13 @@ from app.utils.time import USER_TZ
 from app.utils.arabic_days import resolve_day_name_to_iso
 from app.agent.pending import create_pending_action
 
-from app.features.google_calendar import (
-    add_calendar_event,
+from app.features.calendar_time_parser import parse_reminder_time_ai
+from app.features.reminders_store import (
+    add_reminder,
+    delete_reminder,
     delete_sandy_reminder_by_task_id,
     load_reminders,
-    parse_reminder_time_ai,
-    update_calendar_event,
+    update_reminder,
 )
 from app.utils.user_profiles import active_profile_is_owner
 
@@ -155,27 +156,11 @@ def handle_reminder_action(
                 deleted = 0
                 for r in matched:
                     task_id = r.get("task_id", "")
-                    event_id = r.get("id", "")
+                    reminder_id = r.get("id", "")
                     if task_id:
                         deleted += delete_sandy_reminder_by_task_id(task_id)
-                    elif event_id:
-                        try:
-                            from app.features.google_calendar import (
-                                _execute_calendar_request_with_retry,
-                                _get_calendar_service,
-                                calendar_id,
-                            )
-
-                            svc = _get_calendar_service()
-                            _execute_calendar_request_with_retry(
-                                svc.events().delete(
-                                    calendarId=calendar_id(), eventId=event_id
-                                ),
-                                "executor_delete_reminder_event",
-                            )
-                            deleted += 1
-                        except Exception:
-                            pass
+                    elif reminder_id and delete_reminder(reminder_id):
+                        deleted += 1
                 reply = (
                     f"تمام، حذفت {deleted} تذكير مرتبط بـ '{target_text}'."
                     if deleted
@@ -285,11 +270,11 @@ def handle_reminder_action(
                         "reply": "وقت غير صالح. أعطني الوقت بشكل أوضح.",
                     }
 
-        result = update_calendar_event(
+        result = update_reminder(
             event_id,
             title=new_title,
             start_iso=new_time_iso,
-            description="",
+            recurrence=new_recurrence or None,
         )
 
         if result.get("success"):
@@ -441,16 +426,11 @@ def handle_reminder_action(
                 ):
                     linked_task_id = last_created_task_id
 
-                reminder_description = f"Reminder created by Sandy: {reminder_text}"
-                if linked_task_id:
-                    reminder_description += f"\n[SANDY_TASK_ID:{linked_task_id}]"
-
-                calendar_result = add_calendar_event(
-                    title=reminder_text,
-                    start_iso=remind_at_iso,
-                    description=reminder_description,
-                    reminder_minutes=0,
+                store_result = add_reminder(
+                    text=reminder_text,
+                    remind_at_iso=remind_at_iso,
                     recurrence=recurrence,
+                    linked_task_id=linked_task_id,
                 )
                 reply = (
                     (
@@ -458,7 +438,7 @@ def handle_reminder_action(
                         if recurrence
                         else f"تمام، سجلت التذكير: {reminder_text}"
                     )
-                    if calendar_result.get("success")
-                    else "صار خطأ وأنا بضيف التذكير على Google Calendar. جرّب مرة ثانية."
+                    if store_result.get("success")
+                    else "صار خطأ وأنا بضيف التذكير. جرّب مرة ثانية."
                 )
     return {"handled": True, "reply": reply}

@@ -95,7 +95,7 @@ def build_urgent_tasks_hint_for_prompt(
     """One system-prompt line if any active task is overdue or due within
     horizon_hours, else None."""
     try:
-        from app.features.google_tasks import load_tasks
+        from app.features.tasks_store import load_tasks
     except Exception:
         return None
 

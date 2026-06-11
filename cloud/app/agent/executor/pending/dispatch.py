@@ -86,7 +86,7 @@ def execute_pending_action(
             if not task_name:
                 return {"handled": True, "reply": "ما فهمت الاسم، حاول مرة ثانية."}
             try:
-                from app.features.google_tasks import add_task as _add_task
+                from app.features.tasks_store import add_task as _add_task
                 from app.utils.user_profiles import (
                     active_user_profile_context,
                     get_active_user_profile,

@@ -19,8 +19,8 @@ if str(CURRENT_DIR) not in sys.path:
 from openai import OpenAI, AzureOpenAI
 import telebot
 from apscheduler.schedulers.background import BackgroundScheduler
-from app.features.google_calendar import (
-    check_reminders,
+from app.features.reminders_store import (
+    check_due_reminders as check_reminders,
 )
 
 from app.agent.memory import (
@@ -195,6 +195,12 @@ init_photo_album(mongo_db)
 from app.features.brainstorm import init_brainstorm
 
 init_brainstorm(mongo_db)
+
+from app.features.tasks_store import init_tasks_store
+from app.features.reminders_store import init_reminders_store
+
+init_tasks_store(mongo_db)
+init_reminders_store(mongo_db)
 
 
 def _configure_telegram_http_timeouts() -> None:

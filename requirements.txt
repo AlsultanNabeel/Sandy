@@ -9,6 +9,7 @@ pymongo>=4.6.0
 
 pyTelegramBotAPI==4.32.0
 python-dotenv==1.2.2
+python-dateutil>=2.9.0  # RRULE recurrence for native reminders (sandy_reminders)
 paho-mqtt>=2.1.0
 certifi>=2024.0.0
 SpeechRecognition==3.14.3

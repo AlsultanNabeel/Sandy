@@ -338,7 +338,7 @@ def run_conflict_check_after_task_add(
         return {"has_conflict": False, "alert_text": "", "suggestions": []}
 
     try:
-        from app.features.google_tasks import load_tasks
+        from app.features.tasks_store import load_tasks
         from app.features.google_calendar import list_events_for_date_range
 
         start_iso, end_iso = _day_window(due_dt)
@@ -385,7 +385,7 @@ def run_conflict_check_after_calendar_add(
         return {"has_conflict": False, "alert_text": "", "suggestions": []}
 
     try:
-        from app.features.google_tasks import load_tasks
+        from app.features.tasks_store import load_tasks
         from app.features.google_calendar import list_events_for_date_range
 
         start_day_iso, end_day_iso = _day_window(start_dt)
