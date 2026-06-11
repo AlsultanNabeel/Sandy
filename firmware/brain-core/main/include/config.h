@@ -150,4 +150,4 @@
 // Direction comes from the left/right mic energy balance of the wake
 // utterance itself. Tune with the `ears:` log line.
 #define VOICE_EARS_SWING           35   // max degrees off center (90)
-#define VOICE_EARS_INVERT          0    // set 1 if she turns the wrong way
+#define VOICE_EARS_INVERT          1    // set 1 if she turns the wrong way
