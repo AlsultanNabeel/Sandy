@@ -158,10 +158,15 @@
 #define VOICE_AEC_ENABLE           1
 #define VOICE_AEC_FILTER_LEN       4    // adaptive filter blocks (esp-sr recommends 4)
 // The captured reference leads the acoustic echo by roughly the TX DMA depth
-// (~180ms of audio sits in hardware before the amp plays it), so playback
+// (~60ms of audio sits in hardware before the amp plays it), so playback
 // starts by pre-filling this much silence into the reference queue.
-#define VOICE_AEC_REF_DELAY_MS     180
+#define VOICE_AEC_REF_DELAY_MS     60
 // 1 = the mic keeps streaming to the cloud while she talks (full duplex —
 //     talk over her and Gemini interrupts itself). Falls back to half-duplex
 //     automatically if the AEC engine failed to start.
 #define VOICE_AEC_FULL_DUPLEX      1
+// While she talks, mic frames only go to the cloud above this (cleaned)
+// level — the AEC residual sits low, a real interrupting voice doesn't.
+// The final guard against her answering her own echo. Tune with `diag mic=`
+// readings taken while she speaks.
+#define VOICE_DUPLEX_GATE_LEVEL    1500

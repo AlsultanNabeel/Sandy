@@ -244,9 +244,12 @@ static esp_err_t i2s_start(void) {
     // replays its last block over and over on every starved moment — that's a
     // machine-gun trill layered on Sandy's voice, not a clean dropout.
     tx_cfg.auto_clear_after_cb = true;
-    // Bigger hardware cushion: 6 desc × 720 frames ≈ 180 ms at 24 kHz mono, so
-    // a late task switch doesn't instantly starve the amp.
-    tx_cfg.dma_frame_num = 720;
+    // 6 desc × 240 frames ≈ 60 ms at 24 kHz mono. Kept SMALL on purpose: the
+    // echo canceller's reference is aligned to this depth, and the depth ramps
+    // from zero at each reply start — a small cushion keeps that ramp inside
+    // what the adaptive filter can absorb (and makes barge-in cut faster).
+    // Delivery jitter is the big PSRAM buffer's job, not the DMA's.
+    tx_cfg.dma_frame_num = 240;
     ESP_ERROR_CHECK(i2s_new_channel(&tx_cfg, &s_tx_chan, NULL));
     i2s_std_config_t tx_std = {
         .clk_cfg  = I2S_STD_CLK_DEFAULT_CONFIG(VOICE_OUT_RATE),
@@ -723,8 +726,13 @@ static void mic_task(void *arg) {
                 s_session_voice_ms = now_ms();
             }
             if (s_authed && !mic_muted) {
-                preroll_flush();
-                mic_send(use, frames * sizeof(int16_t));
+                // While she talks, only frames with real speech energy pass —
+                // the AEC residual stays under the gate, so even imperfect
+                // cancellation can't make her answer her own echo.
+                if (!sandy_talking || avg > VOICE_DUPLEX_GATE_LEVEL) {
+                    preroll_flush();
+                    mic_send(use, frames * sizeof(int16_t));
+                }
             } else if (!s_authed && s_preroll) {
                 // Still connecting (or mid-session reconnect): capture instead
                 // of dropping, and flush once the link is authed again.
@@ -827,7 +835,7 @@ static void voice_task(void *arg) {
         .sample_rate = VOICE_IN_RATE,
         .caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT,
         .mode = AEC_MODE_SR_LOW_COST,
-        .nlp_level = AEC_NLP_LEVEL_AGGR,
+        .nlp_level = AEC_NLP_LEVEL_VERYAGGR,
     };
     ESP_LOGI(TAG, "AEC init (heap_int=%u)...",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
