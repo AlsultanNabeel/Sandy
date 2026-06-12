@@ -38,12 +38,13 @@ picks this up, everything below is already committed; continue from "Remaining".
   demo) + LifeTab.jsx (5 sub-views: shopping/habits/expenses/journal/books)
   + i18n ar/en + 8th top tab. Also fixed a worker-dyno crash: the rename
   sweep had missed cloud/sandy_worker.py (5 self_coding imports).
-- **Phase 7 — closing**: docs update (README/Claude.md, English), Heroku env
-  vars list for the owner to DELETE (GOOGLE_CALENDAR_ID, TASKS_PROVIDER,
-  ARDUINO_CLIENT_ID/SECRET, AZURE_REALTIME_DEPLOYMENT, SANDY_THING_ID,
-  NOTION_*), and vars to ADD for web robot control if missing
-  (SANDY_MQTT_HOST/PORT/USER/PASS — same HiveMQ creds as the firmware).
-  Then "وقت البوش" with test phrases per feature.
+- ~~Phase 7~~ DONE: README cleaned (13 edits, no Google Calendar/Tasks left,
+  new features documented). Verified the delete-list config vars have zero
+  code references. Owner actions left: push both repos, then on Heroku
+  DELETE GOOGLE_CALENDAR_ID, TASKS_PROVIDER, ARDUINO_CLIENT_ID/SECRET,
+  AZURE_REALTIME_DEPLOYMENT, SANDY_THING_ID, NOTION_* and ADD
+  SANDY_MQTT_HOST/PORT/USER/PASS (same HiveMQ creds as the firmware) so the
+  web robot tab can connect.
 - **Deferred by decision**: step-by-step project building with checkpoint
   (backend later; frontend-only for now), MQTT broker decision (tied to room
   scenes), reminder-by-robot-voice (tied to the echo fix).

@@ -1,7 +1,7 @@
 # Sandy
 
 Sandy is an AI companion that lives inside a small robot. She hears your voice,
-sees images, remembers your life, reads your mood, keeps your tasks and calendar,
+sees images, remembers your life, reads your mood, keeps your tasks and reminders,
 does web research, writes code, and controls her own body (face, head, camera).
 She runs on LangGraph with multi-agent function calling over Azure GPT-4o-mini,
 and she stays online 24/7 on Heroku.
@@ -33,10 +33,10 @@ live instead of sending files.
 |---|---|
 | Conversation | Text and voice, changing mood, short-term memory (Redis) and long-term memory (MongoDB) |
 | Voice | STT with Azure Speech. TTS with Gemini 3.1 Flash TTS first, then Google or Azure as fallback. Tone follows her mood |
-| Tasks | Add, edit, complete, delete, with a confirmation before anything destructive |
-| Reminders | Create, edit, delete, linked to tasks and the calendar |
-| Google Calendar | Read, add, edit, and resolve appointment conflicts |
-| Email (Gmail) | Read the inbox, send, reply |
+| Tasks | Add, edit, complete, delete, priorities and projects. Stored in MongoDB, with a confirmation before anything destructive |
+| Reminders | Create, edit, snooze, delete. Recurring (daily/weekly/monthly), linked to tasks, snooze buttons in Telegram |
+| Life tracking | Shopping list, habits with streaks, expenses, journal, reading sessions, and a focus mode |
+| Email (Gmail) | Read the inbox, send, reply, watch for important mail. Web inbox with actions: archive, turn into a task, Arabic summary, drafted replies |
 | Research | News, places, and deep web research with Exa |
 | Images | Generate and edit with Azure FLUX (DALL·E / gpt-image as fallback), plus image description with Vision |
 | Documents | Read and analyze TXT, PDF, DOCX, CSV, XLSX, JSON |
@@ -53,9 +53,9 @@ live instead of sending files.
 A bilingual (Arabic / English) React + Vite site. Same Sandy, same backend, in
 the browser. It lives in its own git repo under `frontend/`.
 
-- Pages: Home, Chat (chat, search, and images in one place), Meet Sandy (voice, memory, timeline), Projects, Status, Privacy, Terms.
+- Pages: Home, Studio (chat, search, and images, plus tabs for tasks, reminders, emails, brainstorms, projects, my life, and the robot dashboard), Meet Sandy (voice, memory, timeline), Projects, Status, Privacy, Terms.
 - Bilingual: an AR/EN toggle flips every string, the page direction (RTL/LTR), and the font (Cairo/Inter). Sandy answers in the active language. The site sends `lang` to `/api/agent` and `/api/analyze-image`, and she replies in that language with the same personality.
-- Owner vs guest: the owner logs in for full access (real Google Calendar and Tasks, plus the full pipeline). Guests get a rate-limited Sandy with in-chat owner approval.
+- Owner vs guest: the owner logs in for full access (real tasks, reminders, emails, and life data, plus the full pipeline). Guests see demo data in the productivity tabs and get a rate-limited Sandy with in-chat owner approval.
 - Projects list: the Projects page reads the owner's GitHub repos and shows the ones tagged with the `sandy` topic that have Pages enabled, each as a live `iframe` preview. Projects that Sandy builds (repo plus `sandy` topic plus Pages, README stamped "Created by Sandy") show up here on their own.
 
 ---
@@ -152,8 +152,9 @@ means adding a tool, not editing the router.
 ### Proactive features
 - Proactive Comfort: reassurance on its own when a hard mood shows up.
 - Proactive Context: daily notes plus accumulated context.
-- Smart Silence: checks the calendar and `SANDY_QUIET_HOURS` (default 23-7) before any proactive message.
-- Multi-Tool Chain: "add a meeting tomorrow at 10 and remind me half an hour before" runs `calendar_add` then `reminder_create` from one message.
+- Briefings: morning briefing, evening summary, and weekly stats land in Telegram on a schedule.
+- Smart Silence: checks `SANDY_QUIET_HOURS` (default 23-7) before any proactive message.
+- Multi-Tool Chain: "add a task for tomorrow and remind me at 10" runs `task_add` then `reminder_create` from one message.
 
 ---
 
@@ -241,9 +242,9 @@ EXA_API_KEY=  WEB_RESEARCH_PROVIDER=exa  GOOGLE_PLACES_API_KEY=
 
 ### Google / GitHub / Claude (optional)
 ```env
-GOOGLE_CALENDAR_ID=  GOOGLE_CREDENTIALS_JSON=  TASKS_PROVIDER=google
+GOOGLE_CREDENTIALS_JSON=
 GITHUB_TOKEN=  GITHUB_DEFAULT_REPO=owner/repo  GITHUB_WEBHOOK_SECRET=
-AWS_ACCESS_KEY_ID=  AWS_SECRET_ACCESS_KEY=  AWS_REGION=us-east-1     # Claude/self-coding
+AWS_ACCESS_KEY_ID=  AWS_SECRET_ACCESS_KEY=  AWS_REGION=us-east-1     # Claude/project builder
 CLAUDE_VERTEX_MODEL=claude-sonnet-4-5@20250929  VERTEX_REGION=us-east5
 ```
 
@@ -295,7 +296,7 @@ Sandy/
 │       ├── config.py  bootstrap.py
 │       ├── agent/              # graph/ · nodes/ · agents/ · tools/ · executor/ · facade/ · project_builder/ + humanization
 │       ├── api/                # webhook.py · telegram_handlers.py · telegram_runtime.py
-│       ├── features/           # voice · vision · images · research · google_* · weather
+│       ├── features/           # voice · vision · images · research · gmail · life stores · weather
 │       ├── integrations/       # azure · gemini_tts · google_tts · azure_speech · mongodb · mcp · exa · github · sandy_device(MQTT)
 │       ├── tools/              # heroku_tool · cost_tool
 │       └── utils/              # redis_stm · rate_limiter · circuit_breaker · metrics · text · time ...
