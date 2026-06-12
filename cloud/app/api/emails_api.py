@@ -83,11 +83,19 @@ def register_emails_api(app, mongo_db=None):
     def api_list_emails(claims):
         if claims.get("role") != "owner":
             return jsonify({"items": _DEMO_EMAILS, "demo": True}), 200
-        from app.features.gmail import list_inbox_emails
+        # Never let a Gmail hiccup 500/hang the tab: always answer 200 with
+        # an error field the UI can show next to a retry button.
+        try:
+            from app.features.gmail import list_inbox_emails
 
-        with active_user_profile_context(_OWNER_PROFILE):
-            items = list_inbox_emails(max_results=15)
-        return jsonify({"items": items, "demo": False}), 200
+            with active_user_profile_context(_OWNER_PROFILE):
+                items = list_inbox_emails(max_results=10)
+            return jsonify({"items": items, "demo": False}), 200
+        except Exception as e:  # noqa: BLE001
+            print(f"[EmailsAPI] list failed: {type(e).__name__}: {e}")
+            return jsonify(
+                {"items": [], "demo": False, "error": f"{type(e).__name__}: {e}"}
+            ), 200
 
     @app.route("/api/emails/<email_id>/read", methods=["POST"])
     @require_owner

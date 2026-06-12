@@ -123,14 +123,26 @@ def register_studio_api(app, mongo_db=None):
         if claims.get("role") != "owner":
             return jsonify(_DEMO_ROBOT), 200
         try:
+            import time as _time
+
             from app.integrations.sandy_device import get_sandy_device_client
 
             device = get_sandy_device_client()
-            online = bool(device and device.available and device.is_online())
+            available = bool(device and device.available)
+            connected = bool(available and getattr(device, "_connected", False))
+            last_seen = getattr(device, "_last_seen", 0.0) if device else 0.0
+            online = bool(available and device.is_online())
             status = device.get_full_status() if device else {}
             return jsonify(
                 {
                     "online": online,
+                    # Why-offline diagnostics: available=False means the broker
+                    # env vars are missing on the server; connected=False means
+                    # the broker rejected/never finished the connection;
+                    # otherwise the robot itself isn't publishing its pulse.
+                    "available": available,
+                    "connected": connected,
+                    "last_seen_sec": int(_time.time() - last_seen) if last_seen else -1,
                     "mood": (status or {}).get("mood", ""),
                     "status": status or {},
                     "demo": False,
@@ -138,7 +150,10 @@ def register_studio_api(app, mongo_db=None):
             ), 200
         except Exception as e:  # noqa: BLE001
             print(f"[StudioAPI] robot status failed: {e}")
-            return jsonify({"online": False, "mood": "", "status": {}, "demo": False}), 200
+            return jsonify(
+                {"online": False, "available": False, "connected": False,
+                 "last_seen_sec": -1, "mood": "", "status": {}, "demo": False}
+            ), 200
 
     @app.route("/api/robot/command", methods=["POST"])
     @require_owner
