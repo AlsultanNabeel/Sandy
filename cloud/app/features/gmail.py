@@ -192,6 +192,123 @@ def get_unread_emails(max_results=10):
     return emails
 
 
+def list_inbox_emails(max_results: int = 15):
+    """Recent inbox messages (read AND unread) for the web tab.
+
+    Each item: {id, sender, subject, snippet, date_iso, unread}.
+    """
+    if not active_profile_allows_privileged_access():
+        raise PermissionError("هذا خاص بنبيل 😊")
+
+    from datetime import datetime, timezone as _tz
+
+    service = get_gmail_service()
+    results = (
+        service.users()
+        .messages()
+        .list(userId="me", labelIds=["INBOX"], maxResults=max_results)
+        .execute()
+    )
+    emails = []
+    for msg in results.get("messages", []):
+        detail = (
+            service.users()
+            .messages()
+            .get(
+                userId="me",
+                id=msg["id"],
+                format="metadata",
+                metadataHeaders=["From", "Subject"],
+            )
+            .execute()
+        )
+        headers = {h["name"]: h["value"] for h in detail["payload"]["headers"]}
+        date_iso = ""
+        try:
+            ms = int(detail.get("internalDate", "0"))
+            if ms:
+                date_iso = datetime.fromtimestamp(ms / 1000, tz=_tz.utc).isoformat()
+        except Exception:
+            pass
+        emails.append(
+            {
+                "id": msg["id"],
+                "sender": headers.get("From", ""),
+                "subject": headers.get("Subject", ""),
+                "snippet": _clean_snippet(detail.get("snippet", "")),
+                "date_iso": date_iso,
+                "unread": "UNREAD" in (detail.get("labelIds") or []),
+            }
+        )
+    return emails
+
+
+def get_email_body(email_id: str, max_chars: int = 6000) -> str:
+    """Plain-text body of one message (walks parts, decodes, strips HTML)."""
+    if not active_profile_allows_privileged_access():
+        raise PermissionError("هذا خاص بنبيل 😊")
+
+    service = get_gmail_service()
+    detail = (
+        service.users().messages().get(userId="me", id=email_id, format="full").execute()
+    )
+
+    def _decode(data: str) -> str:
+        try:
+            return base64.urlsafe_b64decode(data.encode()).decode("utf-8", "replace")
+        except Exception:
+            return ""
+
+    def _walk(part) -> list:
+        chunks = []
+        mime = part.get("mimeType", "")
+        body = part.get("body", {}) or {}
+        if mime == "text/plain" and body.get("data"):
+            chunks.append(_decode(body["data"]))
+        elif mime == "text/html" and body.get("data") and not chunks:
+            raw = _decode(body["data"])
+            raw = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", raw, flags=re.S | re.I)
+            raw = re.sub(r"<[^>]+>", " ", raw)
+            chunks.append(html.unescape(raw))
+        for sub in part.get("parts", []) or []:
+            chunks.extend(_walk(sub))
+        return chunks
+
+    text = "\n".join(c for c in _walk(detail.get("payload", {}) or {}) if c.strip())
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text[:max_chars] or _clean_snippet(detail.get("snippet", ""))
+
+
+def mark_email_read(email_id: str) -> bool:
+    if not active_profile_allows_privileged_access():
+        raise PermissionError("هذا خاص بنبيل 😊")
+    try:
+        service = get_gmail_service()
+        service.users().messages().modify(
+            userId="me", id=email_id, body={"removeLabelIds": ["UNREAD"]}
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"[Gmail] mark read failed: {e}")
+        return False
+
+
+def archive_email(email_id: str) -> bool:
+    """Remove from INBOX (Gmail's archive)."""
+    if not active_profile_allows_privileged_access():
+        raise PermissionError("هذا خاص بنبيل 😊")
+    try:
+        service = get_gmail_service()
+        service.users().messages().modify(
+            userId="me", id=email_id, body={"removeLabelIds": ["INBOX", "UNREAD"]}
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"[Gmail] archive failed: {e}")
+        return False
+
+
 def gmail_preview_for_session(emails: list) -> dict:
     """Trimmed payloads safe to persist under session[\"gmail_last_list\"]."""
     out = []

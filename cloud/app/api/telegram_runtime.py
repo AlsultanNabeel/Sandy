@@ -475,8 +475,25 @@ def configure_sandy_scheduler(
         except Exception as e:
             print(f"[Memory] log failed: {e}", flush=True)
 
+    def watch_important_emails():
+        """تنبيه فوري بالإيميل المهم فقط — التصنيف بالذكاء، النشرات بتسكت."""
+        if not owner_chat_id:
+            return None
+        try:
+            from app.features.email_watch import check_new_important_emails
+
+            with active_user_profile_context(owner_profile):
+                return check_new_important_emails(
+                    send_message_fn=telegram_bot.send_message,
+                    user_chat_id=owner_chat_id,
+                )
+        except Exception as e:
+            print(f"[EmailWatch] job failed: {e}")
+            return None
+
     scheduler.add_job(daily_briefing, "cron", hour=6, minute=0)
     scheduler.add_job(run_owner_reminders, "interval", minutes=1)
+    scheduler.add_job(watch_important_emails, "interval", minutes=5)
     scheduler.add_job(
         functools.partial(send_proactive_insight, agent, telegram_bot, owner_chat_id),
         "interval",

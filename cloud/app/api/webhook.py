@@ -485,6 +485,9 @@ def create_telegram_webhook_app(
     from app.api.productivity_api import register_productivity_api
     register_productivity_api(app, mongo_db=mongo_db)
 
+    from app.api.emails_api import register_emails_api
+    register_emails_api(app, mongo_db=mongo_db)
+
     # Langfuse stats for the /status frontend page.
     @app.route("/api/langfuse-stats", methods=["GET"])
     def langfuse_stats():

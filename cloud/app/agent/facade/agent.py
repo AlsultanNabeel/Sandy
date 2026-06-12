@@ -198,9 +198,11 @@ init_brainstorm(mongo_db)
 
 from app.features.tasks_store import init_tasks_store
 from app.features.reminders_store import init_reminders_store
+from app.features.email_watch import init_email_watch
 
 init_tasks_store(mongo_db)
 init_reminders_store(mongo_db)
+init_email_watch(mongo_db)
 
 
 def _configure_telegram_http_timeouts() -> None:
