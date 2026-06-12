@@ -491,7 +491,41 @@ def configure_sandy_scheduler(
             print(f"[EmailWatch] job failed: {e}")
             return None
 
+    def evening_summary():
+        """ملخص المساء: شو خلص اليوم وشو ناطر بكرة."""
+        if not owner_chat_id:
+            return
+        try:
+            from app.agent.facade.briefing import build_evening_summary
+
+            with active_user_profile_context(owner_profile):
+                text = build_evening_summary(
+                    mongo_db=agent.mongo_db, tasks_file=agent.tasks_file
+                )
+            if text:
+                telegram_bot.send_message(owner_chat_id, text, parse_mode=None)
+        except Exception as e:
+            print(f"[EveningSummary] failed: {e}")
+
+    def weekly_stats():
+        """إحصائية الأسبوع كل جمعة مساءً."""
+        if not owner_chat_id:
+            return
+        try:
+            from app.agent.facade.briefing import build_weekly_stats
+
+            with active_user_profile_context(owner_profile):
+                text = build_weekly_stats(
+                    mongo_db=agent.mongo_db, tasks_file=agent.tasks_file
+                )
+            if text:
+                telegram_bot.send_message(owner_chat_id, text, parse_mode=None)
+        except Exception as e:
+            print(f"[WeeklyStats] failed: {e}")
+
     scheduler.add_job(daily_briefing, "cron", hour=6, minute=0)
+    scheduler.add_job(evening_summary, "cron", hour=21, minute=30)
+    scheduler.add_job(weekly_stats, "cron", day_of_week="fri", hour=18, minute=0)
     scheduler.add_job(run_owner_reminders, "interval", minutes=1)
     scheduler.add_job(watch_important_emails, "interval", minutes=5)
     scheduler.add_job(
