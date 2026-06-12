@@ -34,9 +34,10 @@ picks this up, everything below is already committed; continue from "Remaining".
 
 ## Remaining
 
-- **6c — "حياتي" tab in Studio**: web endpoints for shopping/habits/expenses/
-  journal/reading (life_api.py, owner real / guest demo like productivity_api)
-  + a LifeTab with sub-tabs in StudioTabs.jsx + i18n entries.
+- ~~6c — "حياتي" tab~~ DONE: life_api.py (15 endpoints, owner real / guest
+  demo) + LifeTab.jsx (5 sub-views: shopping/habits/expenses/journal/books)
+  + i18n ar/en + 8th top tab. Also fixed a worker-dyno crash: the rename
+  sweep had missed cloud/sandy_worker.py (5 self_coding imports).
 - **Phase 7 — closing**: docs update (README/Claude.md, English), Heroku env
   vars list for the owner to DELETE (GOOGLE_CALENDAR_ID, TASKS_PROVIDER,
   ARDUINO_CLIENT_ID/SECRET, AZURE_REALTIME_DEPLOYMENT, SANDY_THING_ID,
