@@ -276,17 +276,17 @@ schema لطلبات متعددة:
 }}
 
 sandy_face لازم يكون واحد من (اختر اللي يناسب رد Sandy العاطفي للمستخدم):
-  happy, big_happy, sad, cry, angry, surprised, curious, think, sleepy,
-  bored, yawn, excited, shy, confused, cute, empathetic, love, wink, kiss,
-  heart_eyes, alert, calm, smirk, idle
+  happy, big_happy, sad, angry, surprised, curious, thinking, focused,
+  sleepy, bored, excited, shy, confused, love, proud, worried, playful,
+  silly, grumpy, hopeful, grateful, disappointed, alert, calm, idle
 
 أمثلة:
-  • المستخدم حزين → sandy_face=empathetic
-  • المستخدم يشكر Sandy → sandy_face=cute
-  • المستخدم يقول "أحبك" → sandy_face=love أو heart_eyes
+  • المستخدم حزين → sandy_face=worried
+  • المستخدم يشكر Sandy → sandy_face=grateful
+  • المستخدم يقول "أحبك" → sandy_face=love
   • المستخدم يطلب تذكير → sandy_face=happy أو calm
   • سؤال غريب → sandy_face=confused أو curious
-  • نكتة → sandy_face=big_happy أو wink
+  • نكتة → sandy_face=playful أو silly
 
 ──────────────────────────────────────────────
 أدوات هذا الـ specialist (متغيرة حسب النطاق):
@@ -501,16 +501,17 @@ def route_with_fc(
 
     # The model returns sandy_face on every reply so the hardware face always reacts.
     _VALID_FACES = {
-        "happy", "big_happy", "sad", "cry", "angry", "surprised", "curious",
-        "think", "sleepy", "bored", "yawn", "asleep", "excited", "shy",
-        "confused", "cute", "empathetic", "love", "wink", "kiss", "heart_eyes",
-        "alert", "calm", "smirk", "idle",
+        "happy", "big_happy", "sad", "angry", "surprised", "curious",
+        "thinking", "focused", "sleepy", "bored", "excited", "shy",
+        "confused", "love", "proud", "worried", "playful", "silly",
+        "grumpy", "hopeful", "grateful", "disappointed", "alert",
+        "calm", "idle",
     }
     sandy_face = (parsed.get("sandy_face") or "").strip().lower()
     if sandy_face not in _VALID_FACES:
         # Pick a face from the user's mood instead.
         _USER_MOOD_FALLBACK = {
-            "happy": "happy", "sad": "empathetic", "stressed": "empathetic",
+            "happy": "happy", "sad": "worried", "stressed": "worried",
             "frustrated": "calm", "calm": "calm", "neutral": "idle",
         }
         sandy_face = _USER_MOOD_FALLBACK.get((parsed.get("mood") or "").lower(), "idle")

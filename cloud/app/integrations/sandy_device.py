@@ -53,11 +53,13 @@ _TOPIC_CAM_SNAPSHOT   = "sandy/cam/snapshot"
 _TOPIC_CAM_STATUS     = "sandy/cam/status"
 _TOPIC_CAM_EVENT      = "sandy/cam/event"
 
+# Must match MOOD_MAP in firmware/brain-core/main/sandy_mqtt.c exactly —
+# anything else is logged as "unknown mood" on the robot and ignored.
 _VALID_MOODS = {
-    "idle", "happy", "big_happy", "curious", "think", "talk", "alert",
-    "surprised", "sleepy", "bored", "yawn", "sad", "angry", "smirk",
-    "cute", "excited", "shy", "confused", "empathetic", "love", "cry",
-    "wink", "kiss", "heart_eyes", "calm", "asleep",
+    "idle", "happy", "curious", "sad", "alert", "surprised", "big_happy",
+    "focused", "bored", "excited", "love", "angry", "confused", "thinking",
+    "sleepy", "shy", "proud", "worried", "playful", "calm", "grumpy",
+    "hopeful", "grateful", "disappointed", "silly",
 }
 
 _REACTION_TO_MOOD = {
@@ -67,11 +69,12 @@ _REACTION_TO_MOOD = {
     "surprise":  "surprised",
     "love":      "love",
     "neutral":   "idle",
-    "thinking":  "think",
+    "thinking":  "thinking",
     "curious":   "curious",
 }
 
-_VALID_BUZZER = {"startup", "wake", "sleep", "alert", "sad", "error", "stop"}
+# Must match _handle_buzzer in firmware/brain-core/main/sandy_mqtt.c.
+_VALID_BUZZER = {"boot", "happy", "curious", "sad", "alert", "error"}
 _VALID_BASE   = {"forward", "backward", "left", "right", "stop"}
 
 

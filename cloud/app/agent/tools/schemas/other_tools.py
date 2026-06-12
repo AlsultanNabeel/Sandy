@@ -106,7 +106,7 @@ OTHER_TOOLS = [
     # Hardware
     {
         "name": "hardware_face",
-        "description": "غيّر تعبير/مزاج وجه الروبوت. مرّر expression بالقيمة المناسبة: ابتسمي→happy, ضحكة كبيرة→big_happy, حزينة→sad, ابكي→cry, غاضبة→angry, متفاجئة→surprised, فضولية→curious, فكري→think, نعسانة→sleepy, ملولة→bored, تثاءبي→yawn, متعاطفة→empathetic, متحمسة→excited, خجولة→shy, محتارة→confused, لطيفة→cute, غمزة→wink, بوسة→kiss, قلوب بعينيك→heart_eyes, تنبهي→alert, هادئة→calm, محبة→love",
+        "description": "غيّر تعبير/مزاج وجه الروبوت. مرّر expression بالقيمة المناسبة: ابتسمي→happy, ضحكة كبيرة→big_happy, حزينة→sad, معصبة→angry, متفاجئة→surprised, فضولية→curious, فكري→thinking, ركزي→focused, نعسانة→sleepy, زهقانة→bored, متحمسة→excited, خجولة→shy, محتارة→confused, محبة→love, فخورة→proud, قلقانة→worried, شقية→playful, مهبولة→silly, نكدية→grumpy, متفائلة→hopeful, ممتنة→grateful, محبطة→disappointed, تنبهي→alert, هادئة→calm, عادية→idle",
         "parameters": {
             "type": "object",
             "properties": {
@@ -114,9 +114,10 @@ OTHER_TOOLS = [
                     "type": "string",
                     "enum": [
                         "happy", "big_happy", "sad", "angry", "surprised", "curious",
-                        "think", "sleepy", "bored", "yawn", "asleep", "excited", "shy",
-                        "confused", "cute", "empathetic", "love", "cry", "wink", "kiss",
-                        "heart_eyes", "alert", "calm", "smirk", "idle"
+                        "thinking", "focused", "sleepy", "bored", "excited", "shy",
+                        "confused", "love", "proud", "worried", "playful", "silly",
+                        "grumpy", "hopeful", "grateful", "disappointed", "alert",
+                        "calm", "idle"
                     ],
                     "description": "اسم المزاج المطلوب"
                 }
@@ -137,13 +138,13 @@ OTHER_TOOLS = [
     },
     {
         "name": "hardware_buzzer",
-        "description": "شغّل نغمة من البازر. القيم: startup, wake, sleep, alert, sad, error, stop",
+        "description": "شغّل نغمة من البازر. القيم: boot, happy, curious, sad, alert, error",
         "parameters": {
             "type": "object",
             "properties": {
                 "pattern": {
                     "type": "string",
-                    "enum": ["startup", "wake", "sleep", "alert", "sad", "error", "stop"],
+                    "enum": ["boot", "happy", "curious", "sad", "alert", "error"],
                     "description": "اسم النغمة"
                 }
             },
