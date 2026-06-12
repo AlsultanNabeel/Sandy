@@ -293,7 +293,7 @@ Sandy/
 │   ├── sandy_worker.py         # worker dyno entrypoint (self-coding queue)
 │   └── app/
 │       ├── config.py  bootstrap.py
-│       ├── agent/              # graph/ · nodes/ · agents/ · tools/ · executor/ · facade/ · self_coding/ + humanization
+│       ├── agent/              # graph/ · nodes/ · agents/ · tools/ · executor/ · facade/ · project_builder/ + humanization
 │       ├── api/                # webhook.py · telegram_handlers.py · telegram_runtime.py
 │       ├── features/           # voice · vision · images · research · google_* · weather
 │       ├── integrations/       # azure · gemini_tts · google_tts · azure_speech · mongodb · mcp · exa · github · sandy_device(MQTT)

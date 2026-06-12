@@ -61,7 +61,7 @@ except Exception:
 def _handle_signal(signum, frame):
     # Late import: app.* isn't on sys.path until run() runs.
     try:
-        from app.agent.self_coding import shutdown as sa_shutdown
+        from app.agent.project_builder import shutdown as sa_shutdown
         sa_shutdown.request_shutdown()
     except Exception:
         pass
@@ -89,8 +89,8 @@ _LOOP_BACKOFF_MAX_SECS = 30  # cap on the exponential backoff after repeated loo
 
 
 def run() -> None:
-    from app.agent.self_coding import _redis as sa_redis
-    from app.agent.self_coding import project_builder as orchestrator, shutdown as sa_shutdown, task_state
+    from app.agent.project_builder import _redis as sa_redis
+    from app.agent.project_builder import builder as orchestrator, shutdown as sa_shutdown, task_state
     from app.integrations import github_api
 
     if not sa_redis.is_available():
@@ -153,7 +153,7 @@ def run() -> None:
                         where_we_stopped=f"unknown task type: {task_type!r}",
                     )
                     try:
-                        from app.agent.self_coding import notifier
+                        from app.agent.project_builder import notifier
                         notifier.notify_owner(
                             f"Task `{task_id}` rejected: unknown task type "
                             f"`{task_type}` (المتوقع: project_builder)."
@@ -175,7 +175,7 @@ def run() -> None:
                     where_we_stopped=f"orchestrator exception: {exc}",
                 )
                 try:
-                    from app.agent.self_coding import notifier
+                    from app.agent.project_builder import notifier
                     notifier.notify_needs_human(
                         task_id=task_id,
                         reason=f"orchestrator crash: {exc}",
