@@ -963,6 +963,48 @@ def create_issue(
     }
 
 
+def list_issues(
+    *,
+    state: str = "open",
+    repo: Optional[str] = None,
+    max_results: int = 30,
+) -> Dict[str, Any]:
+    """List issues on `repo` (defaults to GITHUB_DEFAULT_REPO), PRs excluded.
+
+    Returns:
+        {ok, status, items: [{number, title, state, labels, html_url,
+                              created_at, comments}], error?}
+    """
+    repo = repo or _get_default_repo()
+    rt = _split_repo(repo)
+    if not rt:
+        return {"ok": False, "status": 0, "error": "repo غير محدد"}
+    owner, name = rt
+    result = _request(
+        "GET",
+        f"/repos/{owner}/{name}/issues",
+        params={"state": state, "per_page": min(max_results, 100)},
+    )
+    if not result.get("ok"):
+        return result
+    items = []
+    for it in result.get("data") or []:
+        if it.get("pull_request"):
+            continue
+        items.append(
+            {
+                "number": it.get("number"),
+                "title": it.get("title", ""),
+                "state": it.get("state", ""),
+                "labels": [lb.get("name", "") for lb in (it.get("labels") or [])],
+                "html_url": it.get("html_url", ""),
+                "created_at": it.get("created_at", ""),
+                "comments": it.get("comments", 0),
+            }
+        )
+    return {"ok": True, "status": result.get("status"), "items": items}
+
+
 # GitHub Pages (M7)
 def enable_pages(
     *,
