@@ -44,11 +44,12 @@ def register_all_tools() -> None:
     from app.agent.tools.schemas.social_ig_tools import SOCIAL_IG_TOOLS
     from app.agent.tools.schemas.social_li_tools import LINKEDIN_TOOLS
     from app.agent.tools.schemas.social_fb_tools import FACEBOOK_TOOLS
+    from app.agent.tools.schemas.life_tools import LIFE_TOOLS
 
     registry = get_registry()
     count = 0
 
-    for tool_list in (TASK_TOOLS, REMINDER_TOOLS, EMAIL_TOOLS, META_TOOLS, OTHER_TOOLS, MCP_TOOLS, GOAL_TOOLS, FUTURE_MESSAGE_TOOLS, GIFT_TOOLS, CONTENT_SHARE_TOOLS, PROJECT_BUILDER_TOOLS, SELF_AWARENESS_TOOLS, PHOTO_TOOLS, BRAINSTORM_TOOLS, SOCIAL_TG_TOOLS, SOCIAL_IG_TOOLS, LINKEDIN_TOOLS, FACEBOOK_TOOLS):
+    for tool_list in (TASK_TOOLS, REMINDER_TOOLS, EMAIL_TOOLS, META_TOOLS, OTHER_TOOLS, MCP_TOOLS, GOAL_TOOLS, FUTURE_MESSAGE_TOOLS, GIFT_TOOLS, CONTENT_SHARE_TOOLS, PROJECT_BUILDER_TOOLS, SELF_AWARENESS_TOOLS, PHOTO_TOOLS, BRAINSTORM_TOOLS, SOCIAL_TG_TOOLS, SOCIAL_IG_TOOLS, LINKEDIN_TOOLS, FACEBOOK_TOOLS, LIFE_TOOLS):
         for t in tool_list:
             registry.register(
                 name=t["name"],
