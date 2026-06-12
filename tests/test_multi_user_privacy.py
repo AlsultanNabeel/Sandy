@@ -95,10 +95,11 @@ def test_scheduler_targets_owner_only(monkeypatch):
         check_reminders_fn=lambda **kwargs: sent.append((kwargs["user_chat_id"], "reminder", None)),
     )
 
-    # 5 jobs: daily_briefing, run_owner_reminders, send_proactive_insight, log_memory_usage, check_heroku_health
-    assert len(scheduler.jobs) == 5
+    # 8 jobs: daily_briefing, evening_summary, weekly_stats, run_owner_reminders,
+    # watch_important_emails, send_proactive_insight, log_memory_usage, check_heroku_health
+    assert len(scheduler.jobs) == 8
     briefing_job = scheduler.jobs[0][0]
-    reminder_job = scheduler.jobs[1][0]
+    reminder_job = scheduler.jobs[3][0]
 
     briefing_job()
     reminder_job()

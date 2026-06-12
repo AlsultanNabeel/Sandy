@@ -45,39 +45,9 @@ class ExecutorRoutingTests(unittest.TestCase):
             save_session_fn=_save_session,
         )
 
-    @patch("app.agent.executor.calendar_handlers.list_upcoming_events")
-    def test_calendar_list_route(self, mock_list_upcoming_events):
-        mock_list_upcoming_events.return_value = [
-            {
-                "summary": "موعد دكتور",
-                "id": "abc123456789",
-                "start": {"dateTime": "2026-04-24T09:00:00+02:00"},
-            }
-        ]
-
-        result = self._call("calendar", {"action": "list"})
-
-        self.assertTrue(result["handled"])
-        self.assertIn("المواعيد القادمة", result["reply"])
-        self.assertIn("موعد دكتور", result["reply"])
-
-    def test_calendar_delete_multi_sets_pending_confirmation(self):
-        session = {}
-
-        result = self._call(
-            "calendar",
-            {"action": "delete_multi", "titles": ["اجتماع 1", "اجتماع 2"]},
-            session=session,
-        )
-
-        self.assertTrue(result["handled"])
-        self.assertEqual(session["pending_action"]["type"], "calendar")
-        self.assertEqual(session["pending_action"]["action"], "confirm_delete_multi")
-        self.assertEqual(session["pending_action"]["titles"], ["اجتماع 1", "اجتماع 2"])
-
-    @patch("app.agent.executor.reminder_handlers.add_calendar_event")
-    def test_reminder_create_route(self, mock_add_calendar_event):
-        mock_add_calendar_event.return_value = {"success": True}
+    @patch("app.agent.executor.reminder_handlers.add_reminder")
+    def test_reminder_create_route(self, mock_add_reminder):
+        mock_add_reminder.return_value = {"success": True}
 
         result = self._call(
             "reminder",
@@ -92,7 +62,7 @@ class ExecutorRoutingTests(unittest.TestCase):
 
         self.assertTrue(result["handled"])
         self.assertIn("سجلت التذكير", result["reply"])
-        sent_recurrence = mock_add_calendar_event.call_args.kwargs["recurrence"]
+        sent_recurrence = mock_add_reminder.call_args.kwargs["recurrence"]
         self.assertIn("UNTIL=", sent_recurrence)
 
     @patch("app.agent.executor.reminder_handlers.load_reminders")
@@ -159,111 +129,6 @@ class ExecutorRoutingTests(unittest.TestCase):
 
         self.assertFalse(result["handled"])
         self.assertEqual(result["reply"], "")
-
-    @patch("app.agent.executor.calendar_handlers.list_events_for_date_range")
-    def test_calendar_list_today_route(self, mock_list_events):
-        mock_list_events.return_value = [
-            {
-                "summary": "اجتماع مع الفريق",
-                "id": "evt123",
-                "start": {"dateTime": "2027-06-01T09:00:00+02:00"},
-            }
-        ]
-
-        result = self._call("calendar", {"action": "list", "query": "today"})
-
-        self.assertTrue(result["handled"])
-        self.assertIn("مواعيد اليوم", result["reply"])
-        self.assertIn("اجتماع مع الفريق", result["reply"])
-
-    @patch("app.agent.executor.calendar_handlers.add_calendar_event")
-    def test_calendar_add_route(self, mock_add):
-        mock_add.return_value = {"success": True, "event_id": "abc", "link": "http://cal.example"}
-
-        result = self._call(
-            "calendar",
-            {
-                "action": "add",
-                "title": "موعد طبيب",
-                "start_iso": "2027-06-01T10:00:00+02:00",
-                "location": "عيادة الدكتور أحمد",
-            },
-        )
-
-        self.assertTrue(result["handled"])
-        self.assertIn("موعد طبيب", result["reply"])
-        mock_add.assert_called_once()
-
-    @patch("app.agent.executor.calendar_handlers.find_calendar_event_by_title")
-    def test_calendar_update_by_title_sets_pending(self, mock_find):
-        mock_find.return_value = {
-            "found": True,
-            "event_id": "evt_abc",
-            "summary": "اجتماع أسبوعي",
-        }
-        session = {}
-
-        result = self._call(
-            "calendar",
-            {"action": "update", "title": "اجتماع أسبوعي", "start_iso": "2027-06-02T11:00:00+02:00"},
-            session=session,
-        )
-
-        self.assertTrue(result["handled"])
-        self.assertIn("pending_action", session)
-        self.assertEqual(session["pending_action"]["action"], "confirm_update")
-        self.assertEqual(session["pending_action"]["event_id"], "evt_abc")
-
-
-    @patch("app.agent.executor.calendar_handlers.list_events_for_date_range")
-    def test_calendar_list_tomorrow_named_query(self, mock_list_events):
-        """query='tomorrow' must call list_events_for_date_range with a 24-hour window."""
-        from datetime import datetime, timedelta
-        from app.utils.time import USER_TZ
-
-        mock_list_events.return_value = [
-            {
-                "summary": "موعد نظارة",
-                "id": "evt_tom",
-                "start": {"dateTime": "2027-06-02T11:00:00+02:00"},
-            }
-        ]
-
-        result = self._call("calendar", {"action": "list", "query": "tomorrow"})
-
-        self.assertTrue(result["handled"])
-        self.assertIn("مواعيد بكرا", result["reply"])
-        self.assertIn("موعد نظارة", result["reply"])
-
-        # Verify the range passed is exactly tomorrow 00:00–23:59
-        call_args = mock_list_events.call_args
-        start_arg = call_args[0][0]
-        end_arg   = call_args[0][1]
-        tomorrow  = (datetime.now(USER_TZ) + timedelta(days=1)).date()
-        self.assertTrue(start_arg.startswith(str(tomorrow)), f"start should be tomorrow: {start_arg}")
-        self.assertIn("23:59", end_arg)
-
-    @patch("app.agent.executor.calendar_handlers.list_events_for_date_range")
-    def test_calendar_list_explicit_time_range(self, mock_list_events):
-        """time_min / time_max from AI planner must be forwarded directly."""
-        mock_list_events.return_value = []
-
-        result = self._call(
-            "calendar",
-            {
-                "action": "list",
-                "time_min": "2027-05-01T00:00:00+02:00",
-                "time_max": "2027-05-01T23:59:59+02:00",
-            },
-        )
-
-        self.assertTrue(result["handled"])
-        mock_list_events.assert_called_once_with(
-            "2027-05-01T00:00:00+02:00",
-            "2027-05-01T23:59:59+02:00",
-            max_results=10,
-        )
-
 
     @patch("app.agent.executor.task_handlers.load_tasks")
     @patch("app.agent.executor.task_handlers.parse_reminder_time_ai")

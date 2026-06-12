@@ -41,16 +41,13 @@ def _handle_confirm_remind_at(
                     "handled": True,
                     "reply": "وقت التذكير صار بالماضي. أعطني وقت لاحق.",
                 }
-            reminder_description = f"Reminder created by Sandy: {reminder_text}"
-            calendar_result = deps.add_calendar_event(
-                title=reminder_text,
-                start_iso=remind_dt.isoformat(),
-                description=reminder_description,
-                reminder_minutes=0,
+            store_result = deps.add_reminder(
+                text=reminder_text,
+                remind_at_iso=remind_dt.isoformat(),
             )
             clear_pending_action(session)
             save_session_fn(session, session_file=session_file, mongo_db=mongo_db)
-            if calendar_result.get("success"):
+            if store_result.get("success"):
                 due_text = remind_dt.strftime("%d/%m/%Y %I:%M %p")
                 return {
                     "handled": True,
@@ -58,7 +55,7 @@ def _handle_confirm_remind_at(
                 }
             return {
                 "handled": True,
-                "reply": "صار خطأ وأنا بحفظ التذكير في Google Calendar.",
+                "reply": "صار خطأ وأنا بحفظ التذكير.",
             }
         except Exception as e:
             clear_pending_action(session)
@@ -134,21 +131,16 @@ def _handle_await_remind_at(
             "reply": "الوقت غير واضح. اكتب التاريخ أو الساعة بشكل أوضح.",
         }
 
-    reminder_description = f"Reminder created by Sandy: {reminder_text}"
     linked_task_id = str(pending.get("linked_task_id", "")).strip()
-    if linked_task_id:
-        reminder_description += f"\n[SANDY_TASK_ID:{linked_task_id}]"
-
-    calendar_result = deps.add_calendar_event(
-        title=reminder_text,
-        start_iso=remind_dt.isoformat(),
-        description=reminder_description,
-        reminder_minutes=0,
-        recurrence=recurrence or None,
+    store_result = deps.add_reminder(
+        text=reminder_text,
+        remind_at_iso=remind_dt.isoformat(),
+        recurrence=recurrence or "",
+        linked_task_id=linked_task_id,
     )
     clear_pending_action(session)
     save_session_fn(session, session_file=session_file, mongo_db=mongo_db)
-    if calendar_result.get("success"):
+    if store_result.get("success"):
         due_text = remind_dt.strftime("%d/%m/%Y %I:%M %p")
         return {
             "handled": True,
@@ -156,7 +148,7 @@ def _handle_await_remind_at(
         }
     return {
         "handled": True,
-        "reply": "صار خطأ وأنا بحفظ التذكير في Google Calendar. جرّب مرة ثانية.",
+        "reply": "صار خطأ وأنا بحفظ التذكير. جرّب مرة ثانية.",
     }
 
 

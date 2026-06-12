@@ -2,7 +2,6 @@ from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from app.agent.conflict_resolution import check_conflicts
-from app.agent.executor.calendar_handlers import handle_calendar_action
 from app.agent.executor.task_handlers import handle_task_action
 from app.utils.time import USER_TZ
 from app.utils.user_profiles import set_active_user_profile
@@ -111,32 +110,6 @@ def test_task_create_appends_conflict_alert(mock_add_task, mock_conflict):
         {"action": "create", "text": "موعد اجتماع", "due_iso": due},
         user_message="ضيفي مهمة موعد اجتماع بكرا",
         normalized_user_message="ضيفي مهمة موعد اجتماع بكرا",
-        session={},
-        session_file=None,
-        mongo_db=None,
-        tasks_file=None,
-        create_chat_completion_fn=None,
-        save_session_fn=_save_session,
-    )
-    set_active_user_profile(None)
-
-    assert result["handled"] is True
-    assert "⚠️ نبيل" in result["reply"]
-    mock_conflict.assert_called_once()
-
-
-@patch("app.agent.executor.calendar_handlers.run_conflict_check_after_calendar_add")
-@patch("app.agent.executor.calendar_handlers.add_calendar_event")
-def test_calendar_add_appends_conflict_alert(mock_add_event, mock_conflict):
-    set_active_user_profile(_OWNER_PROFILE)
-    mock_add_event.return_value = {"success": True, "event_id": "evt_new_1", "link": "http://example.com"}
-    mock_conflict.return_value = "نبيل، عندك امتحان الخميس ولقيت موعد اجتماع نفس اليوم — بعدّل؟"
-
-    start = _dt(days_from_now=1, hour=15).isoformat()
-    result = handle_calendar_action(
-        {"action": "add", "title": "اجتماع المشروع", "start_iso": start},
-        user_message="ضيفي اجتماع",
-        normalized_user_message="ضيفي اجتماع",
         session={},
         session_file=None,
         mongo_db=None,

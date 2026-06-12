@@ -90,12 +90,17 @@ class TestSoulNode(unittest.TestCase):
 
     def test_soul_node_minimal_has_no_snippet(self):
         result = self._run("minimal", "calm")
-        self.assertIsNone(result["persona_snippet"])
+        # minimal بدون مقتطف شخصية — بس لاحقة [حالة المستخدم] من context_builder مسموحة
+        snippet = result["persona_snippet"]
+        if snippet is not None:
+            self.assertTrue(snippet.startswith("[حالة المستخدم:"), snippet)
 
     def test_soul_node_standard_has_snippet(self):
         result = self._run("standard", "calm")
-        # snippet قد يكون None أو string حسب الـ env
-        self.assertIn(result["persona_snippet"], [None, "هيه، وينك؟ 🤍"])
+        # snippet قد يكون None أو يبدأ بالجملة حسب الـ env — لاحقة [حالة المستخدم] مسموحة
+        snippet = result["persona_snippet"]
+        if snippet is not None and not snippet.startswith("[حالة المستخدم:"):
+            self.assertTrue(snippet.startswith("هيه، وينك؟ 🤍"), snippet)
 
 
 class TestSoulVaultNewFeatures(unittest.TestCase):

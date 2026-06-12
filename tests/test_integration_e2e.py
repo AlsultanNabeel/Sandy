@@ -177,7 +177,7 @@ class ReminderActionsTests(unittest.TestCase):
     def tearDown(self):
         set_active_user_profile(None)
 
-    @patch("app.agent.executor.reminder_handlers.add_calendar_event", return_value={"success": True})
+    @patch("app.agent.executor.reminder_handlers.add_reminder", return_value={"success": True})
     def test_reminder_future_creates_successfully(self, mock_add):
         future = (datetime.now(USER_TZ) + timedelta(hours=2)).isoformat()
         r = _call("reminder", {"action": "create", "text": "اتصل بالطبيب", "remind_at_iso": future})

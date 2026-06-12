@@ -129,7 +129,7 @@ class ArchGlossaryTests(unittest.TestCase):
             "mood_cache",
             "Circuit Breaker",
             "MongoDB",
-            "Chroma memory",
+            "Semantic memory",
         ]
         for term in required:
             self.assertIn(term, glossary, f"Term missing from glossary: {term}")
@@ -172,17 +172,17 @@ class ArchGlossaryTests(unittest.TestCase):
             f"memory_lock line must mention threading/concurrency: {lock_line!r}",
         )
 
-    def test_chroma_describes_graceful_degradation(self):
-        """Chroma definition must mention explicit/graceful degradation."""
+    def test_semantic_memory_describes_graceful_degradation(self):
+        """Semantic memory definition must mention explicit/graceful degradation."""
         glossary = self._get_system_prompt()
-        chroma_line = next(
-            (line for line in glossary.splitlines() if "Chroma" in line), ""
+        memory_line = next(
+            (line for line in glossary.splitlines() if "Semantic memory" in line), ""
         )
-        self.assertTrue(chroma_line, "Chroma memory entry not found")
+        self.assertTrue(memory_line, "Semantic memory entry not found")
         degradation_terms = ["تتدهور", "degrad", "آمن", "صريح"]
         self.assertTrue(
-            any(t in chroma_line for t in degradation_terms),
-            f"Chroma line must describe graceful degradation: {chroma_line!r}",
+            any(t in memory_line for t in degradation_terms),
+            f"Semantic memory line must describe graceful degradation: {memory_line!r}",
         )
 
     def test_circuit_breaker_not_described_as_network_outage(self):

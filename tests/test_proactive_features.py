@@ -100,9 +100,9 @@ class TestProactiveScheduler:
                 check_reminders_fn=MagicMock(),
             )
 
-        assert scheduler.add_job.call_count == 5
+        assert scheduler.add_job.call_count == 8
 
-        proactive_job = scheduler.add_job.call_args_list[2][0][0]
+        proactive_job = scheduler.add_job.call_args_list[5][0][0]
 
         with patch("app.agent.executor.dispatch.execute_operational_action", return_value={"handled": True, "reply": "📚 Python مفيد اليوم"}):
             proactive_job()

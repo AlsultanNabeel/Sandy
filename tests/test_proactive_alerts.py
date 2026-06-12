@@ -49,7 +49,7 @@ class TestSchedulerRegistration:
                 scheduler=scheduler, agent=agent, telegram_bot=bot,
                 sandy_user_chat_id="123", check_reminders_fn=MagicMock(),
             )
-        assert scheduler.add_job.call_count == 5
+        assert scheduler.add_job.call_count == 8
 
     def test_heroku_health_interval_5_minutes(self):
         scheduler, bot, agent = _make_scheduler_and_bot()
