@@ -1,10 +1,8 @@
 """Hardening tests for the 5 confirmed risks from the technical briefing."""
 
 import threading
-import time
 import unittest
 from typing import Any, Dict
-from unittest.mock import MagicMock, patch
 
 
 # ── Risk 1: Chroma stable hash IDs ───────────────────────────────────────────

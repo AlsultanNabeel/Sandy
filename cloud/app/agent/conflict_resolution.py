@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime, time, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 import os
-import uuid
 
 from app.utils.arabic_days import WEEKDAY_TO_AR_NAME
 from app.utils.time import USER_TZ
