@@ -174,6 +174,48 @@ def register_studio_api(app, mongo_db=None):
         items = _list_project_tasks()
         return jsonify({"items": items, "demo": False}), 200
 
+    # ── Brainstorm plans ─────────────────────────────────────────────────
+    @app.route("/api/plans", methods=["GET"])
+    @require_auth
+    def api_list_plans(claims):
+        if claims.get("role") != "owner":
+            return jsonify(
+                {
+                    "items": [
+                        {
+                            "id": "demo-pl1",
+                            "topic": "خطة تعلم البرمجة",
+                            "summary": "ثلاث مراحل خلال شهرين مع مشاريع صغيرة",
+                            "finished_at": "2026-06-05T20:00:00",
+                            "plan_text": "## الهدف\nتعلم أساسيات البرمجة...\n(نموذج تجريبي)",
+                        }
+                    ],
+                    "demo": True,
+                }
+            ), 200
+        items = []
+        try:
+            if mongo_db is not None:
+                owner = str(OWNER_CHAT_ID or "")
+                for d in (
+                    mongo_db["sandy_brainstorms"]
+                    .find({"status": "done", "chat_id": {"$in": [owner, int(owner) if owner.isdigit() else owner]}})
+                    .sort("finished_at", -1)
+                    .limit(30)
+                ):
+                    items.append(
+                        {
+                            "id": str(d.get("_id", "")),
+                            "topic": d.get("topic", ""),
+                            "summary": d.get("summary", ""),
+                            "finished_at": str(d.get("finished_at", "") or ""),
+                            "plan_text": d.get("plan_text", ""),
+                        }
+                    )
+        except Exception as e:  # noqa: BLE001
+            print(f"[StudioAPI] plans list failed: {e}")
+        return jsonify({"items": items, "demo": False}), 200
+
     # ── GitHub issues ────────────────────────────────────────────────────
     @app.route("/api/github/issues", methods=["GET"])
     @require_auth
