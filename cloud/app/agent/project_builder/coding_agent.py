@@ -18,7 +18,7 @@ import logging
 import re
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from app.agent.self_coding.coding_agent_tools import (
+from app.agent.project_builder.coding_agent_tools import (
     TOOL_SCHEMAS,
     AgentContext,
     dispatch_tool_call,
@@ -454,7 +454,7 @@ def run_agent(
                 "content": result_text,
             })
             try:
-                metrics.inc_self_coding_tool_call(name)
+                metrics.inc_project_builder_tool_call(name)
             except Exception:
                 pass
 
@@ -490,8 +490,8 @@ def run_agent(
 
         if done_signal:
             try:
-                metrics.observe_self_coding_iterations(iterations)
-                metrics.observe_self_coding_tokens(total_in + total_out)
+                metrics.observe_project_builder_iterations(iterations)
+                metrics.observe_project_builder_tokens(total_in + total_out)
             except Exception:
                 pass
             return {

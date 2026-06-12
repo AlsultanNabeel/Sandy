@@ -231,7 +231,7 @@ def soul_node(state: SandyState) -> SandyState:
             )
         if message:
             try:
-                from app.agent.chroma_memory import search_relevant_summaries, search_relevant_facts
+                from app.agent.semantic_memory import search_relevant_summaries, search_relevant_facts
                 _s2_futs["summaries"] = _SOUL_POOL.submit(search_relevant_summaries, message, chat_id)
                 _s2_futs["sem_facts"] = _SOUL_POOL.submit(search_relevant_facts, message)
             except Exception:

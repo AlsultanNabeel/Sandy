@@ -1,6 +1,6 @@
-"""SA9: Task state machine + queue API for Self-Coding tasks.
+"""SA9: Task state machine + queue API for Project Builder tasks.
 
-A task is a single unit of Self-Coding work — typically one CI failure fix
+A task is a single unit of Project Builder work — typically one CI failure fix
 or one manual feature request. State is stored entirely in Redis:
 
     sandy_sa:task:<id>     Hash    full task record
@@ -31,7 +31,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from app.agent.self_coding import _redis as sa_redis
+from app.agent.project_builder import _redis as sa_redis
 from app.utils import metrics as metrics
 
 logger = logging.getLogger(__name__)
@@ -175,13 +175,13 @@ def set_status(task_id: str, status: str, **extra_fields: Any) -> None:
         # skip silently — metrics are best-effort.
         try:
             task_type = sa_redis.task_hget(task_id, "type") or "unknown"
-            metrics.inc_self_coding_task(task_type, status)
+            metrics.inc_project_builder_task(task_type, status)
             started_iso = sa_redis.task_hget(task_id, "created_at") or ""
             if started_iso:
                 started_dt = datetime.fromisoformat(started_iso.replace("Z", "+00:00"))
                 elapsed = (datetime.now(timezone.utc) - started_dt).total_seconds()
                 if elapsed > 0:
-                    metrics.observe_self_coding_duration(elapsed)
+                    metrics.observe_project_builder_duration(elapsed)
         except Exception:
             pass
 
@@ -463,7 +463,7 @@ def mark_waiting_user(task_id: str, *, where_we_stopped: str, chat_id: Optional[
 
 
 def find_waiting_task_for_chat(chat_id: Any) -> Optional[str]:
-    """Web side: 'does this chat have a Self-Coding task awaiting reply?'.
+    """Web side: 'does this chat have a Project Builder task awaiting reply?'.
 
     Returns the task_id or None. The task is still `waiting_user` after this —
     only `signal_resume()` actually unblocks the worker.
@@ -519,7 +519,7 @@ def wait_for_resume(task_id: str, *, timeout: int = WAITING_USER_MAX_SECS, poll_
     `shutdown.is_shutdown_requested()` to disambiguate.
     """
     # Local import to avoid an import cycle (shutdown module is tiny and pure).
-    from app.agent.self_coding import shutdown as sa_shutdown
+    from app.agent.project_builder import shutdown as sa_shutdown
 
     client = sa_redis.get_client()
     if client is None:

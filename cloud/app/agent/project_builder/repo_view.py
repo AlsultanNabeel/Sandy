@@ -4,7 +4,7 @@ Stores {sha, lines, full_content, line_ending} in Redis cache (TTL 30min) so
 that SA3 can apply a patch using the EXACT lines + endings the LLM saw.
 
 Key invariants:
-- All line indices are 1-indexed throughout the Self-Coding stack.
+- All line indices are 1-indexed throughout the Project Builder stack.
 - Original line endings (CRLF/CR/LF) are preserved in `full_content`.
   We normalize ONLY the working `lines[]` list for indexing.
 - Files larger than 200KB are rejected — caller must narrow the query.
@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.agent.self_coding import _redis as sa_redis
+from app.agent.project_builder import _redis as sa_redis
 from app.integrations import github_api
 
 logger = logging.getLogger(__name__)

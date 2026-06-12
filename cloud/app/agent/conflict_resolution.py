@@ -339,11 +339,10 @@ def run_conflict_check_after_task_add(
 
     try:
         from app.features.tasks_store import load_tasks
-        from app.features.google_calendar import list_events_for_date_range
 
-        start_iso, end_iso = _day_window(due_dt)
         tasks = load_tasks(mongo_db=mongo_db, tasks_file=tasks_file)
-        events = list_events_for_date_range(start_iso, end_iso, max_results=50)
+        # Calendar events are gone (no external calendar) — conflicts are
+        # task-vs-task on the same day now.
         result = check_conflicts(
             {
                 "id": task_id,
@@ -353,7 +352,7 @@ def run_conflict_check_after_task_add(
                 "start_iso": due_dt.isoformat(),
             },
             tasks=tasks,
-            calendar_events=events,
+            calendar_events=[],
             exclude_task_id=task_id,
         )
         suggestions = [
@@ -368,109 +367,3 @@ def run_conflict_check_after_task_add(
     except Exception as exc:
         print(f"[ConflictResolution] task conflict check failed: {exc}")
         return {"has_conflict": False, "alert_text": "", "suggestions": []}
-
-
-def run_conflict_check_after_calendar_add(
-    *,
-    event_id: str,
-    title: str,
-    start_iso: str,
-    end_iso: str = "",
-    description: str = "",
-    mongo_db=None,
-    tasks_file=None,
-) -> Dict[str, Any]:
-    start_dt = _parse_iso(start_iso)
-    if start_dt is None:
-        return {"has_conflict": False, "alert_text": "", "suggestions": []}
-
-    try:
-        from app.features.tasks_store import load_tasks
-        from app.features.google_calendar import list_events_for_date_range
-
-        start_day_iso, end_day_iso = _day_window(start_dt)
-        tasks = load_tasks(mongo_db=mongo_db, tasks_file=tasks_file)
-        events = list_events_for_date_range(start_day_iso, end_day_iso, max_results=50)
-        result = check_conflicts(
-            {
-                "id": event_id,
-                "source": "calendar",
-                "title": title,
-                "description": description,
-                "start_iso": start_dt.isoformat(),
-                "end_iso": end_iso,
-            },
-            tasks=tasks,
-            calendar_events=events,
-            exclude_event_id=event_id,
-        )
-        suggestions = [
-            {"start_iso": s[0].isoformat(), "end_iso": s[1].isoformat()}
-            for s in (result.get("suggestions") or [])
-        ]
-        return {
-            "has_conflict": bool(result.get("has_conflict")),
-            "alert_text": str(result.get("alert_text", "") or ""),
-            "suggestions": suggestions,
-        }
-    except Exception as exc:
-        print(f"[ConflictResolution] calendar conflict check failed: {exc}")
-        return {"has_conflict": False, "alert_text": "", "suggestions": []}
-
-
-def create_conflict_inline_markup(
-    conflict_id: str, suggestions: Optional[List[Dict[str, str]]] = None
-):
-    import telebot.types as tgtypes
-
-    markup = tgtypes.InlineKeyboardMarkup()
-    suggestion_buttons = []
-    for index, suggestion in enumerate(suggestions or []):
-        start_iso = str((suggestion or {}).get("start_iso", "") or "").strip()
-        end_iso = str((suggestion or {}).get("end_iso", "") or "").strip()
-        if not start_iso:
-            continue
-        start_dt = _parse_iso(start_iso)
-        end_dt = _parse_iso(end_iso) if end_iso else None
-        if start_dt is None:
-            continue
-        if end_dt is None:
-            end_dt = start_dt + timedelta(hours=1)
-        label = f"{index + 1}) {start_dt.strftime('%I:%M %p')} - {end_dt.strftime('%I:%M %p')}"
-        suggestion_buttons.append(
-            tgtypes.InlineKeyboardButton(
-                label,
-                callback_data=f"conflict:pick:{conflict_id}:{index}",
-            )
-        )
-
-    if suggestion_buttons:
-        markup.row(*suggestion_buttons)
-
-    markup.row(
-        tgtypes.InlineKeyboardButton(
-            "✅ نعم عدّل", callback_data=f"conflict:yes:{conflict_id}"
-        ),
-        tgtypes.InlineKeyboardButton(
-            "❌ لا خلّيه", callback_data=f"conflict:no:{conflict_id}"
-        ),
-    )
-    return markup
-
-
-def stash_conflict_resolution(
-    session: Dict[str, Any],
-    *,
-    event_id: str,
-    title: str,
-    suggestions: List[Dict[str, str]],
-) -> str:
-    conflict_id = uuid.uuid4().hex
-    session["pending_conflict_resolution"] = {
-        "id": conflict_id,
-        "event_id": str(event_id or "").strip(),
-        "title": str(title or "").strip() or "موعد",
-        "suggestions": suggestions or [],
-        "created_at": datetime.now(USER_TZ).isoformat(),
-    }
-    return conflict_id

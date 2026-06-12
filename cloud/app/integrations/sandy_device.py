@@ -13,7 +13,7 @@ Topics:
     sandy/status          — ESP يبعث JSON status periodically
     sandy/event           — ESP يبعث أحداث (distance alert)
 
-Drop-in replacement for ArduinoCloudClient — same public API surface.
+Sandy's own device-control client — the single body-control API.
 
 Env vars (في .env — لا ترفع لـ git):
     SANDY_MQTT_HOST     — broker hostname (مثل abc123.s2.eu.hivemq.cloud)
@@ -76,7 +76,7 @@ _VALID_BASE   = {"forward", "backward", "left", "right", "stop"}
 
 
 class SandyDeviceClient:
-    """MQTT-based client. Same API as old ArduinoCloudClient."""
+    """MQTT-based client for the robot body (mood/servo/buzzer/base)."""
 
     def __init__(self):
         self._host = os.getenv("SANDY_MQTT_HOST", "").strip()
@@ -263,7 +263,7 @@ class SandyDeviceClient:
             logger.warning("[sandy_device] publish failed (%s): %s", topic, e)
             return False
 
-    # Public API (matches ArduinoCloudClient)
+    # Public API
     def set_mood(self, mood: str) -> bool:
         mood = (mood or "").strip().lower()
         if mood not in _VALID_MOODS:

@@ -174,7 +174,7 @@ def maybe_escalate(
     mark_issue_opened(key, url)
     if notify:
         try:
-            from app.agent.self_coding import notifier
+            from app.agent.project_builder import notifier
             notifier.notify_owner(
                 f"💀 خلل متكرر من `{source}` — فتحت GitHub issue تلقائياً.\n"
                 f"التكرار: {count} مرة في آخر ساعة.\n{url}"

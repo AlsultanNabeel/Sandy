@@ -70,9 +70,8 @@ def brainstorm_finish(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str,
     result = brainstorm.finish_session(chat_id, ctx.create_chat_completion_fn)
     if not result:
         return {"handled": True, "reply": "ما في جلسة عصف نشطة ألخّصها."}
-    plan_text, notion_url, topic = result
-    tail = f"\n\n🔗 محفوظة بـ Notion: {notion_url}" if notion_url else "\n\n(محفوظة عندي — Notion مش مضبوط بعد)"
-    return {"handled": True, "reply": f"{plan_text}{tail}"}
+    plan_text, _, topic = result
+    return {"handled": True, "reply": f"{plan_text}\n\n(محفوظة عندي 🧠)"}
 
 
 def brainstorm_list(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
@@ -89,8 +88,6 @@ def brainstorm_list(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, A
         line = f"{i}. *{p.get('topic', 'خطة')}* ({date})"
         if summary:
             line += f"\n   ↳ {summary}"
-        if p.get("notion_url"):
-            line += f"\n   🔗 {p['notion_url']}"
         lines.append(line)
     return {"handled": True, "reply": "📋 خططك المحفوظة:\n\n" + "\n\n".join(lines)}
 
@@ -104,8 +101,7 @@ def brainstorm_show(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, A
     if not p:
         return {"handled": True, "reply": "ما لقيت خطة بهالوصف 🧠"}
     plan_text = p.get("plan_text") or "(الخطة فاضية)"
-    tail = f"\n\n🔗 {p['notion_url']}" if p.get("notion_url") else ""
-    return {"handled": True, "reply": f"{plan_text}{tail}"}
+    return {"handled": True, "reply": plan_text}
 
 
 def _confirm_line(p: Dict[str, Any]) -> str:
@@ -152,9 +148,8 @@ def brainstorm_confirm(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str
     if not data.get("ok"):
         return {"handled": True, "reply": "ما قدرت ألاقي الخطة — يمكن انحذفت."}
     if op == "delete":
-        return {"handled": True, "reply": f"حذفت خطة «{data['topic']}» ✅ (انأرشفت بـNotion كمان)"}
-    tail = f"\n\n🔗 {data['notion_url']}" if data.get("notion_url") else ""
-    return {"handled": True, "reply": f"عدّلت خطة «{data['topic']}» ✅\n\n{data.get('plan_text', '')}{tail}"}
+        return {"handled": True, "reply": f"حذفت خطة «{data['topic']}» ✅"}
+    return {"handled": True, "reply": f"عدّلت خطة «{data['topic']}» ✅\n\n{data.get('plan_text', '')}"}
 
 
 BRAINSTORM_TOOLS = [

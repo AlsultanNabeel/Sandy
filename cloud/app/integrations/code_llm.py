@@ -275,7 +275,7 @@ def _azure_complete(
 
 
 # Tool-use translation (Anthropic <-> OpenAI)
-# The Self-Coding agent loop is written against Anthropic's tool_use/tool_result
+# The Project Builder agent loop is written against Anthropic's tool_use/tool_result
 # shape. Azure GPT (chat.completions) uses OpenAI's tool_calls / role=tool
 # shape. These helpers translate so we can fall back to Azure when Claude is
 # unreachable without rewriting the agent.

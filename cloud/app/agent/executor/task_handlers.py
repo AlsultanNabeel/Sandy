@@ -9,7 +9,7 @@ from app.agent.pending import create_pending_action
 from app.agent.deep_context import record_last_action
 from app.agent.conflict_resolution import run_conflict_check_after_task_add
 
-from app.features.calendar_time_parser import (
+from app.features.time_parser import (
     parse_reminder_time_ai,
 )
 from app.features.tasks_store import (

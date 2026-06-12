@@ -39,7 +39,7 @@ if _ENABLED:
         "sandy_llm_completion_failure_total", "Failed LLM completions"
     )
 
-    # Self-Coding metrics
+    # Project Builder metrics
     agent_resume_state_saved_total = Counter(
         "sandy_agent_resume_state_saved_total", "Times agent resume_state was saved"
     )
@@ -67,35 +67,35 @@ if _ENABLED:
         "sandy_error_log_failure_total", "Unhandled errors that failed to persist"
     )
 
-    # Self-Coding agent metrics
-    self_coding_task_total = Counter(
-        "sandy_self_coding_task_total",
-        "Self-Coding tasks by type + terminal status",
+    # Project Builder agent metrics
+    project_builder_task_total = Counter(
+        "sandy_project_builder_task_total",
+        "Project Builder tasks by type + terminal status",
         ["task_type", "status"],
     )
-    self_coding_iterations = Histogram(
-        "sandy_self_coding_iterations",
+    project_builder_iterations = Histogram(
+        "sandy_project_builder_iterations",
         "Agent loop iterations per feature",
         buckets=(1, 3, 5, 8, 12, 16, 20, 25),
     )
-    self_coding_tokens_used = Histogram(
-        "sandy_self_coding_tokens_used",
+    project_builder_tokens_used = Histogram(
+        "sandy_project_builder_tokens_used",
         "Total tokens (input+output) per agent run",
         buckets=(10_000, 50_000, 100_000, 200_000, 400_000, 600_000, 800_000),
     )
-    self_coding_tool_calls_total = Counter(
-        "sandy_self_coding_tool_calls_total",
-        "Tool calls from the Self-Coding agent",
+    project_builder_tool_calls_total = Counter(
+        "sandy_project_builder_tool_calls_total",
+        "Tool calls from the Project Builder agent",
         ["tool"],
     )
-    self_coding_duration_seconds = Histogram(
-        "sandy_self_coding_duration_seconds",
-        "End-to-end duration of a Self-Coding task",
+    project_builder_duration_seconds = Histogram(
+        "sandy_project_builder_duration_seconds",
+        "End-to-end duration of a Project Builder task",
         buckets=(30, 60, 120, 300, 600, 1200, 1800, 3600),
     )
-    self_coding_ci_outcome_total = Counter(
-        "sandy_self_coding_ci_outcome_total",
-        "CI outcome counts at the end of a Self-Coding task",
+    project_builder_ci_outcome_total = Counter(
+        "sandy_project_builder_ci_outcome_total",
+        "CI outcome counts at the end of a Project Builder task",
         ["result"],
     )
 
@@ -141,23 +141,23 @@ if _ENABLED:
     def inc_error_log_failure():
         error_log_failure_total.inc()
 
-    def inc_self_coding_task(task_type: str, status: str):
-        self_coding_task_total.labels(task_type=task_type or "unknown", status=status or "unknown").inc()
+    def inc_project_builder_task(task_type: str, status: str):
+        project_builder_task_total.labels(task_type=task_type or "unknown", status=status or "unknown").inc()
 
-    def observe_self_coding_iterations(n: int):
-        self_coding_iterations.observe(int(n or 0))
+    def observe_project_builder_iterations(n: int):
+        project_builder_iterations.observe(int(n or 0))
 
-    def observe_self_coding_tokens(n: int):
-        self_coding_tokens_used.observe(int(n or 0))
+    def observe_project_builder_tokens(n: int):
+        project_builder_tokens_used.observe(int(n or 0))
 
-    def inc_self_coding_tool_call(tool: str):
-        self_coding_tool_calls_total.labels(tool=tool or "unknown").inc()
+    def inc_project_builder_tool_call(tool: str):
+        project_builder_tool_calls_total.labels(tool=tool or "unknown").inc()
 
-    def observe_self_coding_duration(sec: float):
-        self_coding_duration_seconds.observe(float(sec or 0))
+    def observe_project_builder_duration(sec: float):
+        project_builder_duration_seconds.observe(float(sec or 0))
 
-    def inc_self_coding_ci_outcome(result: str):
-        self_coding_ci_outcome_total.labels(result=result or "unknown").inc()
+    def inc_project_builder_ci_outcome(result: str):
+        project_builder_ci_outcome_total.labels(result=result or "unknown").inc()
 
     def metrics_wsgi() -> (bytes, str):
         return generate_latest(), CONTENT_TYPE_LATEST
@@ -178,12 +178,12 @@ else:
     inc_resume_wait_timeout = _noop
     inc_error_log_success = _noop
     inc_error_log_failure = _noop
-    inc_self_coding_task = _noop
-    observe_self_coding_iterations = _noop
-    observe_self_coding_tokens = _noop
-    inc_self_coding_tool_call = _noop
-    observe_self_coding_duration = _noop
-    inc_self_coding_ci_outcome = _noop
+    inc_project_builder_task = _noop
+    observe_project_builder_iterations = _noop
+    observe_project_builder_tokens = _noop
+    inc_project_builder_tool_call = _noop
+    observe_project_builder_duration = _noop
+    inc_project_builder_ci_outcome = _noop
 
     def metrics_wsgi() -> (bytes, str):
         return b"", "text/plain"

@@ -7,7 +7,7 @@ from app.utils.time import USER_TZ
 from app.utils.arabic_days import resolve_day_name_to_iso
 from app.agent.pending import create_pending_action
 
-from app.features.calendar_time_parser import parse_reminder_time_ai
+from app.features.time_parser import parse_reminder_time_ai
 from app.features.reminders_store import (
     add_reminder,
     delete_reminder,

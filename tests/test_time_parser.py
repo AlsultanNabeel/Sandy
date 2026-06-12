@@ -1,10 +1,10 @@
-"""Tests for cloud/app/features/calendar_time_parser.py"""
+"""Tests for cloud/app/features/time_parser.py"""
 import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 
-from app.features.calendar_time_parser import parse_reminder_time_ai
+from app.features.time_parser import parse_reminder_time_ai
 
 
 def _make_completion(iso_str, success=True, intent="reminder"):
@@ -52,7 +52,7 @@ class TestDeterministicDayPath:
         """resolve_day_name_to_iso returns a future date for named day — no AI call."""
         fn = MagicMock(side_effect=AssertionError("AI should not be called"))
         with patch(
-            "app.features.calendar_time_parser.resolve_day_name_to_iso",
+            "app.features.time_parser.resolve_day_name_to_iso",
             return_value="2099-12-31T09:00:00+03:00",
         ):
             result = parse_reminder_time_ai("الاثنين", create_chat_completion_fn=fn)
@@ -63,7 +63,7 @@ class TestDeterministicDayPath:
     def test_deterministic_past_date_falls_through_to_ai(self):
         """If deterministic parse returns a past time, fall through to AI."""
         with patch(
-            "app.features.calendar_time_parser.resolve_day_name_to_iso",
+            "app.features.time_parser.resolve_day_name_to_iso",
             return_value="2000-01-01T09:00:00+03:00",  # past
         ):
             fn = _make_completion("2099-06-01T09:00:00+03:00")

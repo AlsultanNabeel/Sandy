@@ -81,13 +81,13 @@ class TaskActionsTests(unittest.TestCase):
         self.assertTrue(r["handled"])
         mock_add.assert_called_once()
 
-    @patch("app.features.google_tasks.load_tasks", return_value=[_TASK])
+    @patch("app.features.tasks_store.load_tasks", return_value=[_TASK])
     @patch("app.agent.executor.task_handlers.resolve_task_references_for_write", return_value=_SINGLE)
     def test_append_note_success(self, _, __):
         r = _call("task", {"action": "append_note", "reference": "حليب", "notes": "من السوبر ماركت"})
         self.assertTrue(r["handled"])
 
-    @patch("app.features.google_tasks.load_tasks", return_value=[_TASK])
+    @patch("app.features.tasks_store.load_tasks", return_value=[_TASK])
     @patch("app.agent.executor.task_handlers.resolve_task_references_for_write", return_value=_SINGLE)
     def test_replace_note_success(self, _, __):
         r = _call("task", {"action": "replace_note", "reference": "حليب", "notes": "ملاحظة جديدة"})

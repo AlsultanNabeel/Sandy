@@ -1,11 +1,11 @@
 """ميزة العصف الذهني / التخطيط.
 
 ساندي تصير شريكة تفكير: تختار هدف، تنظّم الأفكار خطوة خطوة، تجمّع النقاط،
-وبالآخر تطلّع خطة كاملة تتحفظ في Notion (لو مضبوط) وفي Mongo (دايماً)
+وبالآخر تطلّع خطة كاملة تتحفظ في Mongo
 عشان ترجعلها لاحقاً.
 
 التخزين: مجموعة sandy_brainstorms:
-  {chat_id, topic, status: active|done, points[], plan_text, notion_url,
+  {chat_id, topic, status: active|done, points[], plan_text,
    started_at, finished_at}
 
 بدون Mongo كل دالة بترجّع فاضي بهدوء.
@@ -100,7 +100,6 @@ def start_session(chat_id: Any, topic: str) -> Optional[Dict[str, Any]]:
         "status": "active",
         "points": [],
         "plan_text": "",
-        "notion_url": "",
         "started_at": _now(),
         "finished_at": "",
     }
@@ -176,7 +175,7 @@ def _synthesize_plan(
 def finish_session(
     chat_id: Any, create_chat_completion_fn
 ) -> Optional[Tuple[str, str, str]]:
-    """يلخّص الجلسة النشطة → خطة، يحفظها (Notion + Mongo). يرجّع (الخطة، الرابط، الموضوع) أو None."""
+    """يلخّص الجلسة النشطة → خطة ويحفظها في Mongo. يرجّع (الخطة، "", الموضوع) أو None."""
     active = get_active(chat_id)
     if not active:
         return None
@@ -201,27 +200,17 @@ def finish_session(
 
     plan_text = _synthesize_plan(topic, points, create_chat_completion_fn, conversation)
 
-    # حفظ في Notion (لو مضبوط)
-    notion_url = ""
-    try:
-        from app.integrations import notion_client
-        if notion_client.is_configured():
-            url = notion_client.create_plan_page(topic, plan_text)
-            notion_url = url or ""
-    except Exception as e:  # noqa: BLE001
-        logger.debug("[brainstorm] notion save skipped: %s", e)
-
     _mongo_db[_COLL].update_one(
         {"_id": active["_id"]},
         {"$set": {
             "status": "done",
             "plan_text": plan_text,
             "summary": _extract_summary(plan_text),
-            "notion_url": notion_url,
             "finished_at": _now(),
         }},
     )
-    return plan_text, notion_url, topic
+    # الرابط الفاضي بظل بالعقد القديم للتوافق (كان رابط Notion قبل ما نشيله).
+    return plan_text, "", topic
 
 
 # التعديل (مبني على فهم الخطة الحالية)
@@ -268,24 +257,12 @@ def update_plan(
         return None
     revised = _revise_plan(current, change, create_chat_completion_fn)
 
-    url = p.get("notion_url", "")
-    try:
-        from app.integrations import notion_client
-        if notion_client.is_configured():
-            if not (url and notion_client.update_page_content(url, revised)):
-                # ما قدر يعدّل الصفحة → ينشئ صفحة محدّثة
-                new = notion_client.create_plan_page(p.get("topic", "خطة"), revised)
-                if new:
-                    url = new
-    except Exception as e:  # noqa: BLE001
-        logger.debug("[brainstorm] notion update skipped: %s", e)
-
     _mongo_db[_COLL].update_one(
         {"_id": p["_id"]},
         {"$set": {"plan_text": revised, "summary": _extract_summary(revised),
-                  "notion_url": url, "updated_at": _now()}},
+                  "updated_at": _now()}},
     )
-    return revised, url, p.get("topic", "")
+    return revised, "", p.get("topic", "")
 
 
 # الاسترجاع
@@ -302,18 +279,10 @@ def list_plans(chat_id: Any, limit: int = 10) -> List[Dict[str, Any]]:
 
 
 def delete_plan(chat_id: Any, query: str) -> Tuple[bool, str]:
-    """يحذف خطة محفوظة من الذاكرة + يأرشف صفحتها بـNotion. يرجّع (تمّ؟، الموضوع/رسالة)."""
+    """يحذف خطة محفوظة من الذاكرة. يرجّع (تمّ؟، الموضوع/رسالة)."""
     p = get_plan(chat_id, query)
     if not p:
         return False, "ما لقيت خطة بهالوصف."
-    url = p.get("notion_url", "")
-    if url:
-        try:
-            from app.integrations import notion_client
-            if notion_client.is_configured():
-                notion_client.archive_page(url)
-        except Exception as e:  # noqa: BLE001
-            logger.debug("[brainstorm] notion archive skipped: %s", e)
     _mongo_db[_COLL].delete_one({"_id": p["_id"]})
     return True, str(p.get("topic", "الخطة"))
 
@@ -385,35 +354,17 @@ def confirm_pending(
         return pend.get("op", ""), {"ok": False, "topic": ""}
     topic = doc.get("topic", "الخطة")
     if pend["op"] == "delete":
-        url = doc.get("notion_url", "")
-        if url:
-            try:
-                from app.integrations import notion_client
-                if notion_client.is_configured():
-                    notion_client.archive_page(url)
-            except Exception:  # noqa: BLE001
-                pass
         _mongo_db[_COLL].delete_one({"_id": doc["_id"]})
         return "delete", {"ok": True, "topic": topic}
     if pend["op"] == "edit":
         revised = _revise_plan(doc.get("plan_text", ""), pend.get("change", ""),
                                create_chat_completion_fn)
-        url = doc.get("notion_url", "")
-        try:
-            from app.integrations import notion_client
-            if notion_client.is_configured():
-                if not (url and notion_client.update_page_content(url, revised)):
-                    new = notion_client.create_plan_page(topic, revised)
-                    if new:
-                        url = new
-        except Exception:  # noqa: BLE001
-            pass
         _mongo_db[_COLL].update_one(
             {"_id": doc["_id"]},
             {"$set": {"plan_text": revised, "summary": _extract_summary(revised),
-                      "notion_url": url, "updated_at": _now()}},
+                      "updated_at": _now()}},
         )
-        return "edit", {"ok": True, "topic": topic, "plan_text": revised, "notion_url": url}
+        return "edit", {"ok": True, "topic": topic, "plan_text": revised}
     return pend.get("op", ""), {"ok": False, "topic": topic}
 
 

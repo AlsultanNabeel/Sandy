@@ -1,4 +1,4 @@
-"""In-process content validators for self-coding writes.
+"""In-process content validators for project builder writes.
 
 Replaces the previous subprocess-based approach that depended on
 `scripts/post_edit_validate.py` — which was removed from the repo in

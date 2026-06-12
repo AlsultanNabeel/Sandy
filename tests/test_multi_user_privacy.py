@@ -2,12 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from app.agent.chroma_memory import load_conversations_to_chroma, load_facts_to_chroma, search_relevant_conversations, search_relevant_facts
+from app.agent.semantic_memory import load_conversations_to_chroma, load_facts_to_chroma, search_relevant_conversations, search_relevant_facts
 from app.agent.memory import load_memory, load_session, save_memory, save_session
 from app.api.telegram_runtime import configure_sandy_scheduler
 from app.features.gmail import get_gmail_service
-from app.features.google_calendar import add_calendar_event
-from app.features.google_tasks import load_tasks
+from app.features.reminders_store import add_reminder
+from app.features.tasks_store import load_tasks
 from app.utils.user_profiles import active_user_profile_context
 
 
@@ -44,12 +44,12 @@ def test_guest_cannot_read_or_write_memory(tmp_path: Path):
     assert session_file.read_text(encoding="utf-8").find("hi") != -1
 
 
-def test_guest_cannot_use_google_services():
+def test_guest_cannot_use_private_services():
     with active_user_profile_context(GUEST_PROFILE):
         with pytest.raises(PermissionError, match="هذا خاص بنبيل"):
             load_tasks()
         with pytest.raises(PermissionError, match="هذا خاص بنبيل"):
-            add_calendar_event("test", "2026-01-01T10:00:00+00:00", "2026-01-01T11:00:00+00:00")
+            add_reminder("test", "2027-01-01T10:00:00+00:00")
         with pytest.raises(PermissionError, match="هذا خاص بنبيل"):
             get_gmail_service()
 

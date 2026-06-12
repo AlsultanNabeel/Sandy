@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, 'cloud')
 
-from app.features.google_calendar import parse_reminder_time_ai
+from app.features.time_parser import parse_reminder_time_ai
 from app.utils.arabic_days import (
     parse_numeric_date,
     parse_relative_simple,

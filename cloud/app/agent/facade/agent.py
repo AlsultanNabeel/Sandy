@@ -133,7 +133,7 @@ _ARCH_GLOSSARY = """\
 - Circuit Breaker: wrapper يعزل فشل الخدمات الخارجية — يُرجع قيمة آمنة أو exception معالج، ليس قطع شبكة.
 - MongoDB/JSON fallback: الذاكرة تفضل MongoDB، وتنتقل تلقائياً لـ JSON المحلي عند عدم الاتصال.
 - Memory layer: الحقائق والمحادثات محفوظة في MongoDB (sandy_facts, sandy_conversations) — تستمر عبر إعادة التشغيل.
-- Chroma memory: مُستبدلة بـ MongoDB Vector Search — تتدهور بشكل صريح وآمن إذا لم يكن الـ index متاحاً.\
+- Semantic memory: ذاكرة دلالية على MongoDB Vector Search — تتدهور بشكل صريح وآمن إذا لم يكن الـ index متاحاً.\
 """
 
 MEMORY_FILE = MEMORY_DIR / "sandy_agent_memory.json"
@@ -180,7 +180,7 @@ create_chat_completion = make_chat_completion_fn(
     azure_chat_deployment=AZURE_OPENAI_CHAT_DEPLOYMENT,
 )
 
-from app.agent.chroma_memory import init_mongo_memory
+from app.agent.semantic_memory import init_mongo_memory
 
 init_mongo_memory(mongo_db, openai_client=openai_client)
 

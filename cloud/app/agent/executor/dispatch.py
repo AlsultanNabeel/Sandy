@@ -1,7 +1,6 @@
 import logging
 from typing import Any, Dict, Optional
 
-from app.agent.executor.calendar_handlers import handle_calendar_action
 from app.agent.executor.reminder_handlers import handle_reminder_action
 from app.agent.executor.task_handlers import handle_task_action
 import os
@@ -115,19 +114,6 @@ def execute_operational_action(
             create_chat_completion_fn=create_chat_completion_fn,
             save_session_fn=save_session_fn,
         )
-    if action_type == "calendar":
-        return handle_calendar_action(
-            params,
-            user_message=user_message,
-            normalized_user_message=normalized_user_message,
-            session=session,
-            session_file=session_file,
-            mongo_db=mongo_db,
-            tasks_file=tasks_file,
-            create_chat_completion_fn=create_chat_completion_fn,
-            save_session_fn=save_session_fn,
-        )
-
     # Heroku: logs, dyno status, restart, hours.
     if action_type == "heroku":
         return _handle_heroku_action(params)

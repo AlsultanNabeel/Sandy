@@ -9,8 +9,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "cloud"))
 from app.agent.executor.task_handlers import handle_task_action
 from app.agent.executor.task_handlers import _task_callback_to_message
 from app.agent.executor.task_handlers import _build_task_inline_markup
-from app.features.google_tasks import build_task_display
-from app.features.google_tasks import resolve_task_reference_for_write
+from app.features.tasks_store import build_task_display
+from app.features.tasks_store import resolve_task_reference_for_write
 from app.features.research_formatter import summarize_research_results
 from app.utils.user_profiles import set_active_user_profile
 
@@ -23,7 +23,7 @@ def test_build_task_display_uses_numbered_rows_and_due_dates():
         {"id": "2", "text": "اتصال الأم", "due": "", "due_at": ""},
     ]
 
-    with patch("app.features.google_tasks.load_tasks", return_value=tasks):
+    with patch("app.features.tasks_store.load_tasks", return_value=tasks):
         text, aliases = build_task_display(mongo_db=None, tasks_file=None)
 
     assert "1. شراء حليب — الموعد:" in text
@@ -36,7 +36,7 @@ def test_handle_task_list_includes_quick_reply_markup():
     session = {}
     set_active_user_profile(_OWNER_PROFILE)
 
-    with patch("app.features.google_tasks.load_tasks", return_value=tasks):
+    with patch("app.features.tasks_store.load_tasks", return_value=tasks):
         result = handle_task_action(
             {"action": "list"},
             user_message="شو مهامي",
@@ -77,7 +77,7 @@ def test_task_inline_markup_uses_stable_task_ids_when_available():
 def test_task_reference_resolver_accepts_explicit_id_prefix():
     tasks = [{"id": "abc123", "text": "شراء حليب", "done": False}]
 
-    with patch("app.features.google_tasks.load_tasks", return_value=tasks):
+    with patch("app.features.tasks_store.load_tasks", return_value=tasks):
         result = resolve_task_reference_for_write("ID:abc123", mongo_db=None, tasks_file=None, aliases={})
 
     assert result["status"] == "matched"

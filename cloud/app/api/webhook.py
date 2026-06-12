@@ -11,14 +11,14 @@ from flask_cors import CORS
 import telebot
 import uuid
 
-from app.agent.self_coding import _redis as sa_redis
+from app.agent.project_builder import _redis as sa_redis
 from app.utils import trace as trace_ctx
 from app.utils import metrics as metrics
 from app.utils import metrics_push as metrics_push
 
 from app.utils.thread_pool import sandy_executor
 
-from app.agent.chroma_memory import chroma_stats
+from app.agent.semantic_memory import semantic_memory_stats
 from app.utils.error_tracking import log_unhandled_exception
 from app.tools.heroku_tool import analyze_build_logs, format_build_alert
 
@@ -31,7 +31,7 @@ def create_telegram_webhook_app(
     webhook_path: str,
     telegram_secret_token: str = "",
     mongo_db=None,
-    chroma_stats_fn=chroma_stats,
+    semantic_memory_stats_fn=semantic_memory_stats,
 ):
     # Imported here (not at module top) so importing this module stays free of
     # the PyJWT dependency until the app is actually built. The decorators below
@@ -72,7 +72,7 @@ def create_telegram_webhook_app(
 
         chroma_status = {"ok": False}
         try:
-            chroma_data = chroma_stats_fn() if callable(chroma_stats_fn) else {}
+            chroma_data = semantic_memory_stats_fn() if callable(semantic_memory_stats_fn) else {}
             chroma_status.update({"ok": True, **(chroma_data or {})})
         except Exception as exc:
             chroma_status["error"] = str(exc)

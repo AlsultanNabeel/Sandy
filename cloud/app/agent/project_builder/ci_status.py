@@ -16,7 +16,7 @@ import logging
 import time
 from typing import Any, Dict, Optional
 
-from app.agent.self_coding import shutdown as sa_shutdown
+from app.agent.project_builder import shutdown as sa_shutdown
 from app.integrations import github_api
 
 logger = logging.getLogger(__name__)
@@ -181,7 +181,7 @@ def wait_for_ci(
         if state in {"success", "failure"}:
             try:
                 from app.utils import metrics
-                metrics.inc_self_coding_ci_outcome(state)
+                metrics.inc_project_builder_ci_outcome(state)
             except Exception:
                 pass
             return {**status, "timed_out": False}
@@ -192,7 +192,7 @@ def wait_for_ci(
             if no_runs_count >= 4:
                 try:
                     from app.utils import metrics
-                    metrics.inc_self_coding_ci_outcome("no_runs")
+                    metrics.inc_project_builder_ci_outcome("no_runs")
                 except Exception:
                     pass
                 return {**status, "timed_out": False, "state": "no_runs"}

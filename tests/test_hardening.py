@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 class ChromaHashStabilityTests(unittest.TestCase):
     def test_fact_id_is_deterministic(self):
         """Fact IDs must be reproducible across processes (no builtin hash())."""
-        from app.agent.chroma_memory import _fact_id
+        from app.agent.semantic_memory import _fact_id
         from app.utils.user_profiles import set_active_user_profile
 
         chat_id = "123456"
@@ -33,12 +33,12 @@ class ChromaHashStabilityTests(unittest.TestCase):
             def __getitem__(self, name):
                 return FakeCollection()
 
-        import app.agent.chroma_memory as cm
+        import app.agent.semantic_memory as cm
         orig_db = cm._mongo_db
         cm._mongo_db = FakeDb()
         set_active_user_profile({"relation": "owner", "permissions": "all", "chat_id": chat_id})
         try:
-            from app.agent.chroma_memory import load_facts_to_chroma
+            from app.agent.semantic_memory import load_facts_to_chroma
             load_facts_to_chroma([{"text": text, "type": "owner_name"}])
         finally:
             cm._mongo_db = orig_db
@@ -50,18 +50,18 @@ class ChromaHashStabilityTests(unittest.TestCase):
 
     def test_same_text_produces_same_id_on_repeated_calls(self):
         """Two calls with the same fact text must produce identical IDs."""
-        from app.agent.chroma_memory import _fact_id
+        from app.agent.semantic_memory import _fact_id
         text = "يسكن في القاهرة"
         self.assertEqual(_fact_id(text, "111"), _fact_id(text, "111"))
 
     def test_different_texts_produce_different_ids(self):
         """Different fact texts must not collide."""
-        from app.agent.chroma_memory import _fact_id
+        from app.agent.semantic_memory import _fact_id
         self.assertNotEqual(_fact_id("يسكن في القاهرة", "111"), _fact_id("يعمل مهندس", "111"))
 
     def test_different_users_produce_different_ids(self):
         """Same text for different users must not collide."""
-        from app.agent.chroma_memory import _fact_id
+        from app.agent.semantic_memory import _fact_id
         self.assertNotEqual(_fact_id("اسمي نبيل", "111"), _fact_id("اسمي نبيل", "222"))
 
 
@@ -69,76 +69,6 @@ class ChromaHashStabilityTests(unittest.TestCase):
 
 _OWNER_PROFILE = {"relation": "owner", "permissions": "all", "tone": "casual", "name": "Test"}
 
-
-class CalendarServiceCachingTests(unittest.TestCase):
-    def setUp(self):
-        from app.utils.user_profiles import set_active_user_profile
-        set_active_user_profile(_OWNER_PROFILE)
-        import app.features.google_calendar as cal_mod
-        cal_mod._CALENDAR_SERVICE = None  # reset before each test
-
-    def tearDown(self):
-        from app.utils.user_profiles import set_active_user_profile
-        set_active_user_profile(None)
-        import app.features.google_calendar as cal_mod
-        cal_mod._CALENDAR_SERVICE = None
-
-    def test_service_is_cached_after_first_call(self):
-        """Second call must return the same object without rebuilding."""
-        import app.features.google_calendar as cal_mod
-
-        fake_service = MagicMock()
-        with patch.object(cal_mod, "_build_calendar_service", return_value=fake_service) as mock_build:
-            svc1 = cal_mod._get_calendar_service()
-            svc2 = cal_mod._get_calendar_service()
-
-        self.assertIs(svc1, svc2)
-        mock_build.assert_called_once()  # built exactly once
-
-    def test_reset_clears_cache(self):
-        """_reset_calendar_service() must force a rebuild on next call."""
-        import app.features.google_calendar as cal_mod
-
-        call_count = {"n": 0}
-
-        def _fake_build():
-            call_count["n"] += 1
-            return MagicMock()
-
-        with patch.object(cal_mod, "_build_calendar_service", side_effect=_fake_build):
-            cal_mod._get_calendar_service()
-            cal_mod._reset_calendar_service()
-            cal_mod._get_calendar_service()
-
-        self.assertEqual(call_count["n"], 2)
-
-    def test_concurrent_calls_build_only_once(self):
-        """Concurrent calls must not race-build the service twice."""
-        import app.features.google_calendar as cal_mod
-        from app.utils.user_profiles import set_active_user_profile
-
-        build_count = {"n": 0}
-
-        def _slow_build():
-            time.sleep(0.05)
-            build_count["n"] += 1
-            return MagicMock()
-
-        def _call_with_profile():
-            set_active_user_profile(_OWNER_PROFILE)
-            cal_mod._get_calendar_service()
-
-        with patch.object(cal_mod, "_build_calendar_service", side_effect=_slow_build):
-            threads = [threading.Thread(target=_call_with_profile) for _ in range(8)]
-            for t in threads:
-                t.start()
-            for t in threads:
-                t.join()
-
-        self.assertEqual(build_count["n"], 1)
-
-
-# ── Risk 4: Thread-safe memory mutation ───────────────────────────────────────
 
 class PredictionThreadSafetyTests(unittest.TestCase):
     def test_concurrent_predict_calls_do_not_corrupt_memory(self):

@@ -90,185 +90,6 @@ def _enqueue_local_tts(mongo_db: Any, clean_text: str) -> None:
         logger.warning("[Mongo] sandy_local_queue insert failed: %s", exc)
 
 
-def process_conflict_resolution_callback(
-    *,
-    telegram_bot: Any,
-    agent: Any,
-    call: Any,
-    profile_allows_full_access_fn: Callable[[Any], bool],
-    log_handler_exception_fn: Callable[..., None],
-    persist_agent_session_fn: Optional[Callable[[], None]] = None,
-) -> bool:
-    data = str(getattr(call, "data", "") or "")
-    if not data.startswith("conflict:"):
-        return False
-
-    try:
-        chat_id = call.message.chat.id
-        parts = data.split(":")
-        if len(parts) < 3:
-            telegram_bot.answer_callback_query(call.id, "زر غير صالح")
-            return True
-
-        action = parts[1].strip().lower()
-        conflict_id = parts[2].strip()
-
-        if not profile_allows_full_access_fn(chat_id):
-            telegram_bot.answer_callback_query(call.id, "هذا خاص بنبيل 😊")
-            return True
-
-        pending = (getattr(agent, "session", None) or {}).get(
-            "pending_conflict_resolution"
-        ) or {}
-        if str(pending.get("id", "") or "") != conflict_id:
-            telegram_bot.answer_callback_query(call.id, "انتهت صلاحية هذا التنبيه")
-            return True
-
-        try:
-            telegram_bot.edit_message_reply_markup(
-                chat_id, call.message.message_id, reply_markup=None
-            )
-        except Exception:
-            pass
-
-        mongo_db = getattr(agent, "mongo_db", None)
-        event_id = str(pending.get("event_id", "") or "").strip()
-        title = str(pending.get("title", "") or "").strip() or "موعد"
-        suggestions = list(pending.get("suggestions") or [])
-        profile = find_user_profile(chat_id, mongo_db=mongo_db) or {
-            "chat_id": str(chat_id),
-            "relation": "owner",
-            "permissions": "all",
-            "tone": "casual",
-        }
-
-        chosen_index = 0
-        if action == "pick":
-            if len(parts) != 4:
-                telegram_bot.answer_callback_query(call.id, "خيار غير صالح")
-                return True
-            try:
-                chosen_index = int(parts[3].strip())
-            except Exception:
-                telegram_bot.answer_callback_query(call.id, "خيار غير صالح")
-                return True
-            action = "yes"
-
-        if action == "yes":
-            if not event_id or not suggestions:
-                telegram_bot.answer_callback_query(call.id, "لا يوجد اقتراح صالح")
-                return True
-
-            if chosen_index < 0 or chosen_index >= len(suggestions):
-                telegram_bot.answer_callback_query(call.id, "خيار غير صالح")
-                return True
-
-            chosen = suggestions[chosen_index]
-            start_iso = str(chosen.get("start_iso", "") or "").strip()
-            end_iso = str(chosen.get("end_iso", "") or "").strip()
-            chosen_label = f"{chosen_index + 1}"
-
-            from app.features.google_calendar import update_calendar_event
-
-            with active_user_profile_context(profile):
-                update_result = update_calendar_event(
-                    event_id=event_id, start_iso=start_iso, end_iso=end_iso
-                )
-            if update_result.get("success"):
-                (getattr(agent, "session", None) or {}).pop(
-                    "pending_conflict_resolution", None
-                )
-                if persist_agent_session_fn:
-                    persist_agent_session_fn()
-
-                if mongo_db is not None:
-                    now = datetime.now(timezone.utc)
-                    mongo_db["conflict_resolutions"].update_one(
-                        {"conflict_id": conflict_id},
-                        {
-                            "$set": {
-                                "status": "resolved",
-                                "event_id": event_id,
-                                "title": title,
-                                "chosen_start_iso": start_iso,
-                                "chosen_end_iso": end_iso,
-                                "updated_at": now,
-                            }
-                        },
-                        upsert=True,
-                    )
-                    mongo_db["calendar_events"].update_one(
-                        {"event_id": event_id},
-                        {
-                            "$set": {
-                                "title": title,
-                                "start_iso": start_iso,
-                                "end_iso": end_iso,
-                                "updated_at": now,
-                            }
-                        },
-                        upsert=True,
-                    )
-
-                telegram_bot.answer_callback_query(call.id, "تم التعديل")
-                telegram_bot.send_message(
-                    chat_id,
-                    f"✅ عدّلت '{title}' على الاقتراح {chosen_label}: {start_iso}",
-                    parse_mode=None,
-                )
-            else:
-                telegram_bot.answer_callback_query(call.id, "ما قدرت أعدّل")
-                telegram_bot.send_message(
-                    chat_id,
-                    "صار خلل أثناء تعديل الموعد. جرّب مرة ثانية.",
-                    parse_mode=None,
-                )
-            return True
-
-        if action == "no":
-            (getattr(agent, "session", None) or {}).pop(
-                "pending_conflict_resolution", None
-            )
-            if persist_agent_session_fn:
-                persist_agent_session_fn()
-
-            if mongo_db is not None:
-                mongo_db["conflict_resolutions"].update_one(
-                    {"conflict_id": conflict_id},
-                    {
-                        "$set": {
-                            "status": "kept",
-                            "event_id": event_id,
-                            "title": title,
-                            "updated_at": datetime.now(timezone.utc),
-                        }
-                    },
-                    upsert=True,
-                )
-
-            telegram_bot.answer_callback_query(call.id, "تمام")
-            telegram_bot.send_message(chat_id, "تمام، خلّيته كما هو", parse_mode=None)
-            return True
-
-        telegram_bot.answer_callback_query(call.id, "خيار غير معروف")
-        return True
-
-    except Exception as exc:
-        _chat_id = None
-        try:
-            _chat_id = call.message.chat.id
-        except Exception:
-            _chat_id = None
-        log_handler_exception_fn(
-            exc,
-            "telegram_handlers.process_conflict_resolution_callback",
-            chat_id=_chat_id,
-            extra={"callback_data": data},
-        )
-        telegram_bot.answer_callback_query(call.id, "حدث خطأ")
-        return True
-
-
 def register_basic_telegram_handlers(
     *,
     telegram_bot: Any,
@@ -365,13 +186,13 @@ def register_basic_telegram_handlers(
         """Run the LangGraph pipeline and return a response dict."""
         from app.agent.graph.graph import run_graph, get_final_reply
 
-        # Owner-only intercept before the graph runs, for Self-Coding tasks
+        # Owner-only intercept before the graph runs, for Project Builder tasks
         # that are waiting on the user. The hook does approve/cancel/revision
         # routing so the message doesn't fall through to a fresh chat turn.
         try:
             from app.utils.user_profiles import is_owner_chat_id
             if is_owner_chat_id(chat_id):
-                from app.agent.self_coding import resume_hook
+                from app.agent.project_builder import resume_hook
                 _resume_session = _get_chat_session(chat_id)
                 intercepted = resume_hook.try_handle_resume(
                     str(text), chat_id, session=_resume_session
@@ -1581,19 +1402,6 @@ def register_basic_telegram_handlers(
                 extra={"callback_data": call.data},
             )
             telegram_bot.answer_callback_query(call.id, "حدث خطأ")
-
-    @telegram_bot.callback_query_handler(
-        func=lambda call: str(call.data or "").startswith("conflict:")
-    )
-    def handle_conflict_callback(call):
-        process_conflict_resolution_callback(
-            telegram_bot=telegram_bot,
-            agent=agent,
-            call=call,
-            profile_allows_full_access_fn=_profile_allows_full_access,
-            log_handler_exception_fn=_log_handler_exception,
-            persist_agent_session_fn=persist_agent_session_fn,
-        )
 
     @telegram_bot.callback_query_handler(
         func=lambda call: call.data.startswith("task:")

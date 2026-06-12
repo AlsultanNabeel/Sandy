@@ -1,9 +1,9 @@
 import threading
 import time
 
-from app.agent.self_coding import task_state
-from app.agent.self_coding import _redis as sa_redis
-from app.agent.self_coding import shutdown as sa_shutdown
+from app.agent.project_builder import task_state
+from app.agent.project_builder import _redis as sa_redis
+from app.agent.project_builder import shutdown as sa_shutdown
 
 
 class FakeRedisClient2:

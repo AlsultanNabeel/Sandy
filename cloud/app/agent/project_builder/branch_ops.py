@@ -1,6 +1,6 @@
 """SA4: github_create_branch — idempotent branch creation per task.
 
-Each Self-Coding task runs on an isolated branch `sandy-task-<id>`.
+Each Project Builder task runs on an isolated branch `sandy-task-<id>`.
 If the branch already exists (e.g. crash recovery), we just return its SHA.
 """
 

@@ -1,6 +1,6 @@
-"""Resume hook — pre-graph middleware for Self-Coding `waiting_user` tasks.
+"""Resume hook — pre-graph middleware for Project Builder `waiting_user` tasks.
 
-When a Self-Coding task is paused (mark_waiting_user), the Worker dyno blocks
+When a Project Builder task is paused (mark_waiting_user), the Worker dyno blocks
 until a Redis flag is set. This module is the WEB-side counterpart: before any
 LangGraph processing, we check whether the current chat has a paused task
 awaiting reply.
@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
-from app.agent.self_coding import task_state
+from app.agent.project_builder import task_state
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ def try_handle_resume(
     *,
     session: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
-    """If chat has a `waiting_user` Self-Coding task, intercept the message.
+    """If chat has a `waiting_user` Project Builder task, intercept the message.
 
     Returns a response dict ready to send back, or None to let the normal
     graph handle the message.
@@ -149,7 +149,7 @@ def try_handle_resume(
 
     if task.get("status") != task_state.STATUS_WAITING_USER:
         # Stale index — clean up
-        from app.agent.self_coding import _redis as sa_redis
+        from app.agent.project_builder import _redis as sa_redis
         client = sa_redis.get_client()
         if client is not None:
             try:
@@ -167,7 +167,7 @@ def try_handle_resume(
             task_state.STATUS_FAILED,
             where_we_stopped=f"ألغاه المستخدم: {message[:200]}",
         )
-        from app.agent.self_coding import _redis as sa_redis
+        from app.agent.project_builder import _redis as sa_redis
         client = sa_redis.get_client()
         if client is not None:
             try:

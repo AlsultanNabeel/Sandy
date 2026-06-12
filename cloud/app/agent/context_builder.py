@@ -51,7 +51,7 @@ def build_memory_context(
 
     if include_semantic and message and chat_id:
         try:
-            from app.agent.chroma_memory import search_relevant_summaries, search_relevant_facts
+            from app.agent.semantic_memory import search_relevant_summaries, search_relevant_facts
             ctx["semantic_summaries"] = search_relevant_summaries(message, chat_id, n_results=3)
             ctx["semantic_facts"] = search_relevant_facts(message, n_results=5)
         except Exception as exc:

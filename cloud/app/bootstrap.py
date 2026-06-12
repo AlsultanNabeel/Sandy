@@ -36,7 +36,7 @@ _QUIET_LOGGERS = (
     "redis",
     "redis.connection",
     "redis.client",
-    "app.agent.self_coding._redis",
+    "app.agent.project_builder._redis",
     "bedrock",
     "bedrock-runtime",
 )
@@ -52,7 +52,7 @@ def configure_logging(log_level: str = "INFO") -> None:
     for name in _QUIET_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
     # Redis timeouts are expected (empty queue polling) — suppress to ERROR only
-    logging.getLogger("app.agent.self_coding._redis").setLevel(logging.ERROR)
+    logging.getLogger("app.agent.project_builder._redis").setLevel(logging.ERROR)
     logger.debug("[Bootstrap] Logging configured at %s level", log_level)
 
 

@@ -70,7 +70,7 @@ def test_health_endpoint_reports_services_and_logs_webhook_error():
         telegram_bot=bot,
         webhook_path="/webhook",
         mongo_db=mongo_db,
-        chroma_stats_fn=lambda: {"path": "/tmp/chroma", "facts": 2, "conversations": 3},
+        semantic_memory_stats_fn=lambda: {"path": "/tmp/chroma", "facts": 2, "conversations": 3},
     )
 
     client = app.test_client()

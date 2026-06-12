@@ -1,4 +1,4 @@
-"""M8 — Tool schemas + dispatch for the Self-Coding agent loop.
+"""M8 — Tool schemas + dispatch for the Project Builder agent loop.
 
 Wraps the existing repo primitives (repo_grep / repo_view / repo_patch /
 repo_create / github_api.list_repo_tree) as Anthropic-format tools so the
@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from app.agent.self_coding import repo_create, repo_grep, repo_patch, repo_view
+from app.agent.project_builder import repo_create, repo_grep, repo_patch, repo_view
 from app.integrations import github_api
 
 logger = logging.getLogger(__name__)

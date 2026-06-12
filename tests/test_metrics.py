@@ -80,9 +80,9 @@ class MetricsWiringTests(unittest.TestCase):
         mock_failure.assert_not_called()
 
     def test_wait_for_resume_shutdown_records_metric(self):
-        from app.agent.self_coding import task_state
-        from app.agent.self_coding import _redis as sa_redis
-        from app.agent.self_coding import shutdown as sa_shutdown
+        from app.agent.project_builder import task_state
+        from app.agent.project_builder import _redis as sa_redis
+        from app.agent.project_builder import shutdown as sa_shutdown
 
         class FakeClient:
             def get(self, key):
@@ -97,10 +97,10 @@ class MetricsWiringTests(unittest.TestCase):
         with patch.object(sa_redis, "get_client", return_value=FakeClient()), \
              patch.object(sa_shutdown, "is_shutdown_requested", return_value=True), \
              patch.object(sa_shutdown, "interruptible_sleep", return_value=True), \
-             patch("app.agent.self_coding.task_state.metrics.observe_resume_wait") as mock_observe, \
-             patch("app.agent.self_coding.task_state.metrics.inc_resume_wait_shutdown") as mock_shutdown, \
-             patch("app.agent.self_coding.task_state.metrics.inc_resume_wait_resumed") as mock_resumed, \
-             patch("app.agent.self_coding.task_state.metrics.inc_resume_wait_timeout") as mock_timeout:
+             patch("app.agent.project_builder.task_state.metrics.observe_resume_wait") as mock_observe, \
+             patch("app.agent.project_builder.task_state.metrics.inc_resume_wait_shutdown") as mock_shutdown, \
+             patch("app.agent.project_builder.task_state.metrics.inc_resume_wait_resumed") as mock_resumed, \
+             patch("app.agent.project_builder.task_state.metrics.inc_resume_wait_timeout") as mock_timeout:
             ok = task_state.wait_for_resume("sa_test_123", timeout=5, poll_interval=0)
 
         self.assertFalse(ok)

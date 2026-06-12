@@ -1,4 +1,4 @@
-"""Cooperative shutdown flag for the Self-Coding Worker.
+"""Cooperative shutdown flag for the Project Builder Worker.
 
 Heroku sends SIGTERM during a redeploy and gives the dyno ~30s before SIGKILL.
 The Worker's polling loops (CI wait, owner-resume wait) can block far longer

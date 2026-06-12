@@ -60,21 +60,30 @@ def _dedup(items: List[Dict]) -> List[Dict]:
 
 def build_morning_briefing(*, memory: Dict[str, Any], mongo_db, tasks_file) -> str:
     from app.features.tasks_store import load_tasks
-    from app.features.google_calendar import list_events_for_date_range
+    from app.features.reminders_store import load_reminders
     from app.features.weather import get_weather, format_weather_for_prompt
 
     now = datetime.now(USER_TZ)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    today_end = now.replace(hour=23, minute=59, second=59, microsecond=0).isoformat()
+    today_end = now.replace(hour=23, minute=59, second=59, microsecond=0)
 
     oauth_note = ""
     try:
         tasks = load_tasks(mongo_db=mongo_db, tasks_file=tasks_file)
-        calendar_events = list_events_for_date_range(today_start, today_end, max_results=10)
     except GoogleOAuthReconnectNeeded as e:
         oauth_note = str(e)
         tasks = []
-        calendar_events = []
+    # Today's reminders take the slot calendar events used to fill.
+    todays_reminders = []
+    try:
+        for r in load_reminders(max_results=50):
+            try:
+                dt = datetime.fromisoformat(r.get("remind_at", ""))
+                if dt <= today_end:
+                    todays_reminders.append(r)
+            except Exception:
+                continue
+    except Exception:
+        todays_reminders = []
 
     city = str(memory.get("sandy_state", {}).get("home_city", "") or "").strip() or "October City"
     weather_raw = format_weather_for_prompt(get_weather(city))
@@ -96,24 +105,25 @@ def build_morning_briefing(*, memory: Dict[str, Any], mongo_db, tasks_file) -> s
         tasks_lines.append(f"- {text}{due_label}")
 
     cal_lines = []
-    for e in calendar_events:
-        start = (e.get("start", {}) or {}).get("dateTime") or (e.get("start", {}) or {}).get("date") or ""
-        summary = (e.get("summary", "") or "").strip()
+    for r in todays_reminders:
+        text = (r.get("text", "") or "").strip()
         label = ""
-        if start:
-            try:
-                dt = datetime.fromisoformat(start.replace("Z", "+00:00")).astimezone(USER_TZ)
-                label = dt.strftime("%I:%M %p")
-            except Exception:
-                label = start
-        cal_lines.append(f"- {summary or 'موعد'} @ {label}" if label else f"- {summary or 'موعد'}")
+        try:
+            dt = datetime.fromisoformat(r.get("remind_at", "")).astimezone(USER_TZ)
+            label = dt.strftime("%I:%M %p")
+        except Exception:
+            pass
+        prefix = "🔁 " if r.get("is_recurring") else ""
+        cal_lines.append(
+            f"- {prefix}{text or 'تذكير'} @ {label}" if label else f"- {prefix}{text or 'تذكير'}"
+        )
 
     data_block = f"""الطقس: {weather_raw}
 المزاج المرصود: {mood}
 المهام النشطة ({len(active_tasks)}):
 {chr(10).join(tasks_lines) if tasks_lines else "لا توجد مهام"}
-مواعيد التقويم اليوم:
-{chr(10).join(cal_lines) if cal_lines else "لا توجد مواعيد"}"""
+تذكيرات اليوم:
+{chr(10).join(cal_lines) if cal_lines else "لا توجد تذكيرات"}"""
 
     if oauth_note:
         data_block += f"\nتحذير OAuth: {oauth_note}"
@@ -128,7 +138,7 @@ def build_morning_briefing(*, memory: Dict[str, Any], mongo_db, tasks_file) -> s
 - اذكري الطقس بجملة واحدة خفيفة
 - اجمعي المشتريات الموجودة في البيانات بجملة واحدة — لا تخترعي مشتريات من عندك
 - اذكري المهام الأخرى بإيجاز
-- اذكري مواعيد التقويم لو في
+- اذكري تذكيرات اليوم لو في
 - اختمي بجملة واحدة شخصية شامية مختلفة كل يوم (مذكر)
 - لا تكتبي قوائم منقطة ولا عناوين رسمية
 - الطول الكلي: ٥-٨ أسطر فقط
@@ -152,10 +162,10 @@ def build_morning_briefing(*, memory: Dict[str, Any], mongo_db, tasks_file) -> s
 
     # Fallback when the model call fails: plain structured text.
     tasks_block = "\n".join(tasks_lines[:6]) if tasks_lines else "ما في مهام"
-    cal_block = "\n".join(cal_lines) if cal_lines else "ما في مواعيد"
+    cal_block = "\n".join(cal_lines) if cal_lines else "ما في تذكيرات"
     return (
         f"صباح الخير ☀️\n\n"
         f"🌤 {weather_raw}\n\n"
         f"📋 مهامك:\n{tasks_block}\n\n"
-        f"📅 اليوم:\n{cal_block}"
+        f"⏰ تذكيرات اليوم:\n{cal_block}"
     )

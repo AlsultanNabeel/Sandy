@@ -117,7 +117,7 @@ def _summarize_to_ltm(chat_id: str, user_id: str, messages: List[Dict[str, Any]]
         # Compute embedding first for deduplication check
         vec: Optional[List[float]] = None
         try:
-            from app.agent.chroma_memory import _embed
+            from app.agent.semantic_memory import _embed
             vec = _embed(summary)
         except Exception:
             pass

@@ -1,9 +1,9 @@
-"""Internal Redis access for Self-Coding Agent.
+"""Internal Redis access for Project Builder Agent.
 
 Reuses the project's existing Redis singleton (RedisSTMClient) for connection
 pooling, but exposes the raw client for advanced ops (LPUSH, BRPOPLPUSH, HSET).
 
-All Self-Coding keys are namespaced under `sandy_sa:*` to avoid collision with STM.
+All Project Builder keys are namespaced under `sandy_sa:*` to avoid collision with STM.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 # Namespaces
-NS = "sandy_sa"  # prefix for all Self-Coding keys
+NS = "sandy_sa"  # prefix for all Project Builder keys
 
 # Key builders
 def k_file_cache(path: str, sha: str) -> str:

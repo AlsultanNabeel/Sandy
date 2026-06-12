@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 
 def github_repo_grep_handler(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
-    from app.agent.self_coding import repo_grep
+    from app.agent.project_builder import repo_grep
     result = repo_grep.repo_grep(
         query=str(args.get("query") or "").strip(),
         max_results=int(args.get("max_results") or 20),
@@ -51,7 +51,7 @@ def github_repo_grep_handler(args: Dict[str, Any], ctx: "DispatchContext") -> Di
 
 
 def github_repo_view_handler(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
-    from app.agent.self_coding import repo_view
+    from app.agent.project_builder import repo_view
     file_path = str(args.get("file") or args.get("path") or "").strip()
     start = int(args.get("start_line") or 1)
     end = int(args.get("end_line") or start + 30)
@@ -77,7 +77,7 @@ def github_repo_view_handler(args: Dict[str, Any], ctx: "DispatchContext") -> Di
 def github_repo_status_handler(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
     """List queued + processing tasks with id + description + status."""
     import json as _json
-    from app.agent.self_coding import _redis as sa_redis, task_state
+    from app.agent.project_builder import _redis as sa_redis, task_state
 
     if not sa_redis.is_available():
         return {"handled": True, "reply": "Redis غير متاح — ما عندي task state"}
@@ -93,12 +93,12 @@ def github_repo_status_handler(args: Dict[str, Any], ctx: "DispatchContext") -> 
     if qlen == 0 and plen == 0:
         return {
             "handled": True,
-            "reply": "📊 Self-Coding فاضية — لا queue ولا processing.",
+            "reply": "📊 Project Builder فاضية — لا queue ولا processing.",
             "queue_size": 0,
             "processing_size": 0,
         }
 
-    lines = [f"📊 Self-Coding state:\n• queue: {qlen}\n• processing: {plen}"]
+    lines = [f"📊 Project Builder state:\n• queue: {qlen}\n• processing: {plen}"]
 
     def _describe(raw_payload: str, *, processing: bool) -> str:
         try:
@@ -143,7 +143,7 @@ def github_build_project_handler(args: Dict[str, Any], ctx: "DispatchContext") -
     Missing fields come back as a clear error so the owner can re-issue
     the request — no in-place negotiation flow.
     """
-    from app.agent.self_coding import task_state
+    from app.agent.project_builder import task_state
 
     description = str(args.get("description") or "").strip()
     repo_name = str(args.get("repo_name") or "").strip()
@@ -242,7 +242,7 @@ def _normalize_or_generate_repo_name(candidate: str, description: str) -> str:
 
 
 # Tool registry entries
-SELF_CODING_TOOLS = [
+PROJECT_BUILDER_TOOLS = [
     {
         "name": "github_repo_grep",
         "description": (
@@ -283,7 +283,7 @@ SELF_CODING_TOOLS = [
     {
         "name": "github_status",
         "description": (
-            "عرض حالة Self-Coding queue + processing مع تفاصيل كل task "
+            "عرض حالة Project Builder queue + processing مع تفاصيل كل task "
             "(id + الوصف + الـ status + الـ stage). "
             "استخدمه لما الأونر يسأل أسئلة زي: 'شو في الـ queue', 'كم task فيها', "
             "'وريني التاسكات', 'في اشي شغّال', 'حالة ساندي الكوديّة'."

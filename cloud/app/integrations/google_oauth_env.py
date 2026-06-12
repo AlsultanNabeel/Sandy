@@ -9,10 +9,10 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-# Unified OAuth scopes for all Google APIs (Tasks + Calendar + Gmail)
+# Gmail is the ONLY Google API left (tasks/calendar went native to Mongo).
+# NOTE: the stored token may still carry the old tasks/calendar scopes — that's
+# harmless; new consents only ask for Gmail.
 UNIFIED_SCOPES = [
-    "https://www.googleapis.com/auth/tasks",
-    "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.modify",

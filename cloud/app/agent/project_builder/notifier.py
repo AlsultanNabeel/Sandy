@@ -1,4 +1,4 @@
-"""Telegram notifier for Self-Coding Agent.
+"""Telegram notifier for Project Builder Agent.
 
 Sends messages from the Worker dyno directly to the owner. Worker doesn't
 have access to the main telebot instance, so we use a fresh client per call

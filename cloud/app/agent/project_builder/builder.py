@@ -20,7 +20,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from app.agent.self_coding import (
+from app.agent.project_builder import (
     _redis as sa_redis,
     branch_ops,
     ci_status,

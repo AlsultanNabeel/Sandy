@@ -35,13 +35,6 @@ from app.agent.executor.pending.reminder_pending import (
     _handle_await_remind_at,
     _exec_reminder_delete_all,
 )
-from app.agent.executor.pending.calendar_pending import (
-    _handle_confirm_update_with_time,
-    _exec_calendar_delete,
-    _exec_calendar_confirm_delete_multi,
-    _exec_calendar_confirm_delete_range,
-    _exec_calendar_confirm_update,
-)
 from app.agent.executor.pending.email_pending import (
     _handle_email_confirm_pending,
     _handle_await_email_body,
@@ -193,11 +186,6 @@ def execute_pending_action(
             **_clarify_common,
         )
 
-    if pending_type == "calendar" and pending_action == "confirm_update_with_time":
-        return _handle_confirm_update_with_time(
-            user_message, pending, **_clarify_common
-        )
-
     # For email confirm/edit, catch edits before the quick-confirmation gate.
     if pending_type == "email" and pending_action == "confirm_send":
         edit_result = _handle_email_confirm_pending(
@@ -263,14 +251,6 @@ def execute_pending_action(
 
     if pending_type == "reminder" and pending_action == "delete_all":
         return _exec_reminder_delete_all(**_exec_no_tasks)
-    if pending_type == "calendar" and pending_action == "delete":
-        return _exec_calendar_delete(**_exec_no_tasks)
-    if pending_type == "calendar" and pending_action == "confirm_delete_multi":
-        return _exec_calendar_confirm_delete_multi(**_exec_no_tasks)
-    if pending_type == "calendar" and pending_action == "confirm_delete_range":
-        return _exec_calendar_confirm_delete_range(**_exec_no_tasks)
-    if pending_type == "calendar" and pending_action == "confirm_update":
-        return _exec_calendar_confirm_update(**_exec_no_tasks)
 
     # Email execution
     if pending_type == "email" and pending_action == "confirm_send":

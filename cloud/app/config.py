@@ -45,8 +45,6 @@ AZURE_OPENAI_CHAT_DEPLOYMENT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "").str
 AZURE_OPENAI_VISION_DEPLOYMENT = os.getenv("AZURE_OPENAI_VISION_DEPLOYMENT", "").strip()
 AZURE_OPENAI_STT_DEPLOYMENT = os.getenv("AZURE_OPENAI_STT_DEPLOYMENT", "").strip()
 
-# Azure Realtime (streaming audio)
-AZURE_REALTIME_DEPLOYMENT = os.getenv("AZURE_REALTIME_DEPLOYMENT", "sandy-realtime").strip()
 
 # Images: Azure FLUX (primary), with a fallback
 AZURE_FLUX_ENDPOINT = os.getenv("AZURE_FLUX_ENDPOINT", "https://sandy-ai-azure.services.ai.azure.com").strip()
@@ -66,10 +64,8 @@ AZURE_SPEECH_VOICE = os.getenv("AZURE_SPEECH_VOICE", "ar-LB-LaylaNeural").strip(
 
 # Google services
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "").strip()
-GOOGLE_CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "").strip()
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
 GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
-TASKS_PROVIDER = os.getenv("TASKS_PROVIDER", "google").strip()
 
 # Research
 EXA_API_KEY = os.getenv("EXA_API_KEY", "").strip()
@@ -92,9 +88,6 @@ SANDY_IP = os.getenv("SANDY_IP", "192.168.1.100").strip()
 SANDY_ENABLE_BASE_MOTION = os.getenv("SANDY_ENABLE_BASE_MOTION", "0").strip() == "1"
 SANDY_ENABLE_SCREEN_HTTP = os.getenv("SANDY_ENABLE_SCREEN_HTTP", "0").strip() == "1"
 SANDY_DEVICE_ID = os.getenv("SANDY_DEVICE_ID", "").strip()
-SANDY_THING_ID = os.getenv("SANDY_THING_ID", "").strip()
-ARDUINO_CLIENT_ID = os.getenv("ARDUINO_CLIENT_ID", "").strip()
-ARDUINO_CLIENT_SECRET = os.getenv("ARDUINO_CLIENT_SECRET", "").strip()
 
 # Camera
 CAM_IP = os.getenv("CAM_IP", "192.168.1.150").strip()
@@ -146,7 +139,7 @@ SYSTEM_PROMPT_ADDITION: str = os.getenv(
 # or "أنا أنثى، استخدمي صياغة المؤنث", or leaves it empty.
 OWNER_ADDRESS_NOTE: str = os.getenv("SANDY_OWNER_ADDRESS_NOTE", "").strip()
 
-# Self-coding agent (Project Builder)
+# Project Builder agent (Project Builder)
 SANDY_SA_MAX_QUEUE: int = int(os.getenv("SANDY_SA_MAX_QUEUE", "10").strip() or "10")
 
 # Claude Sonnet via Vertex AI (the fixer LLM)

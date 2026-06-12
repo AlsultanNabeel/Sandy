@@ -425,7 +425,7 @@ def search_relevant_summaries(query: str, chat_id: str, n_results: int = 3) -> L
         return []
 
 
-def chroma_stats() -> Dict[str, Any]:
+def semantic_memory_stats() -> Dict[str, Any]:
     """Return counts for the current user, for health checks and debugging."""
     if not _can_read_memory():
         return {"path": "mongodb", "facts": 0, "conversations": 0}
@@ -456,5 +456,5 @@ __all__ = [
     "load_conversations_to_chroma",
     "search_relevant_facts",
     "search_relevant_conversations",
-    "chroma_stats",
+    "semantic_memory_stats",
 ]

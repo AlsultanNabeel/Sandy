@@ -19,12 +19,12 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
-from app.agent.self_coding import _redis as sa_redis
-from app.agent.self_coding.post_write_validate import (
+from app.agent.project_builder import _redis as sa_redis
+from app.agent.project_builder.post_write_validate import (
     mark_path_written,
     validate_content,
 )
-from app.agent.self_coding.repo_view import (
+from app.agent.project_builder.repo_view import (
     get_cached_or_fetch,
     invalidate_file_cache,
     join_lines_with_ending,
