@@ -464,6 +464,15 @@ def configure_sandy_scheduler(
                 keyboard_builder=_reminder_keyboard,
             )
 
+    def run_scene_timers():
+        """يطفّي/يرجّع أوامر الغرفة المؤقتة (مثل موسيقى لمدة محددة) عند حلول وقتها."""
+        try:
+            from app.features.scene_store import run_due_timers
+            with active_user_profile_context(owner_profile):
+                run_due_timers()
+        except Exception as e:
+            print(f"[SceneTimers] failed: {e}")
+
     def log_memory_usage():
         """يطبع استهلاك الذاكرة كل ٥ دقايق — للكشف عن leaks."""
         try:
@@ -527,6 +536,7 @@ def configure_sandy_scheduler(
     scheduler.add_job(evening_summary, "cron", hour=21, minute=30)
     scheduler.add_job(weekly_stats, "cron", day_of_week="fri", hour=18, minute=0)
     scheduler.add_job(run_owner_reminders, "interval", minutes=1)
+    scheduler.add_job(run_scene_timers, "interval", minutes=1)
     scheduler.add_job(watch_important_emails, "interval", minutes=5)
     scheduler.add_job(
         functools.partial(send_proactive_insight, agent, telegram_bot, owner_chat_id),
