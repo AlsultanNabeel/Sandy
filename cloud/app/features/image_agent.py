@@ -3,14 +3,7 @@ import re
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-
-def _get_owner_address_note() -> str:
-    """يجلب ملاحظة خطاب الأونر (المذكر/المؤنث) من env. فاضي = ما يتدخل."""
-    try:
-        from app.config import OWNER_ADDRESS_NOTE
-        return OWNER_ADDRESS_NOTE or ""
-    except Exception:
-        return ""
+from app.utils.user_profiles import address_instruction
 
 
 def _lazy_plan_image_action(user_message, *, session, create_chat_completion_fn):
@@ -132,7 +125,7 @@ def render_image_reply_with_ai(
                         "Write ONE short natural Arabic reply (1-2 sentences) by Palestinian dialect. "
                         "Sound like a real friend, NEVER robotic, never use [tags], minimal emojis. "
                         "VARY your wording every time — do not repeat the same opening. "
-                        + (_get_owner_address_note() + " " if _get_owner_address_note() else "")
+                        + address_instruction() + " "
                         + "Behavior by action: "
                         "  • action=generate_new/edit_last/variation AND success=true: "
                         "    – mention the subject naturally (use short_caption_ar as hint, don't copy verbatim). "

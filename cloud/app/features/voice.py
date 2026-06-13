@@ -12,6 +12,7 @@ from app.utils.thread_pool import sandy_executor
 from app.integrations.gemini_tts import synthesize_voice_with_gemini
 from app.integrations.google_tts import synthesize_voice_with_google
 from app.integrations.azure_speech import synthesize_voice_with_azure
+from app.utils.user_profiles import address_instruction
 
 _TTS_MAX_CHARS = 120        # فوق هاد → Gemini يلخّص للصوت (للأدوات المؤهلة فقط)
 _TTS_VOICE_BUDGET = 240     # سقف التقصير الحتمي (fallback لو فشل التلخيص)
@@ -76,7 +77,7 @@ def _summarize_for_tts(text: str, mood: str = "neutral", user_message: str = "")
         "القواعد: لخّص بأقل عدد جمل ممكن دون خسارة معلومة مهمة. "
         "لا تكرر نفسك ولا تطوّل بدون فائدة. "
         "لا مقدمات، لا 'خليني أحكيلك'، ابدأ مباشرة بالمعلومة الأهم. "
-        "كل جملة تبدأها تكملها. المستخدم شاب — صيغة مذكر دائماً.\n\n"
+        f"كل جملة تبدأها تكملها. {address_instruction()}\n\n"
         f"{mood_hint}"
         f"{question_context}"
         f"الرد:\n{text}"

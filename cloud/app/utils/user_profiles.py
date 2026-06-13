@@ -107,6 +107,21 @@ def active_profile_is_owner() -> bool:
     return relation == "owner" or permissions == "all"
 
 
+def address_instruction(profile: Optional[Dict[str, Any]] = None) -> str:
+    """Arabic line telling Sandy which grammatical gender to address the current
+    speaker with. The default speaker is the owner (male), so anything that
+    isn't an explicitly-female profile resolves to masculine."""
+    if profile is None:
+        profile = get_active_user_profile()
+    gender = str((profile or {}).get("gender", "") or "").strip().lower()
+    if gender == "female":
+        return "المتحدثة معك أنثى — خاطبيها بصيغة المؤنث."
+    return (
+        "المتحدث معك ذكر (المالك نبيل افتراضياً حتى يتعرّف على ضيف) — "
+        "خاطبيه بصيغة المذكر."
+    )
+
+
 def active_profile_allows_privileged_access() -> bool:
     profile = get_active_user_profile()
     if profile is None:
@@ -136,6 +151,7 @@ def _normalize_profile(
         "relation": relation,
         "tone": DEFAULT_TONE_BY_RELATION[relation],
         "permissions": DEFAULT_PERMISSIONS_BY_RELATION[relation],
+        "gender": "",
     }
 
     if isinstance(profile, dict):
@@ -145,11 +161,14 @@ def _normalize_profile(
         normalized["permissions"] = (
             str(profile.get("permissions", "") or "").strip().lower()
         )
+        _g = str(profile.get("gender", "") or "").strip().lower()
+        normalized["gender"] = _g if _g in {"male", "female"} else ""
 
     if is_owner_chat_id(chat_id):
         normalized["relation"] = "owner"
         normalized["tone"] = "casual"
         normalized["permissions"] = "all"
+        normalized["gender"] = "male"  # the owner is male — the default speaker
     else:
         normalized["relation"] = _normalize_relation(normalized["relation"])
         normalized["tone"] = (

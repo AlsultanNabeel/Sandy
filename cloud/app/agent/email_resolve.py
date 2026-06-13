@@ -96,7 +96,11 @@ def _parse_email_field_edit(
                         "content": (
                             "You are an email editor. Given a user instruction and the current email fields, "
                             'return JSON: {"field":"to"|"subject"|"body", "op":"replace"|"append", "value":"..."} '
-                            'or {"field":null} if the message is not an edit instruction. Return valid JSON only.'
+                            'or {"field":null} if the message is not an edit instruction. Return valid JSON only.\n'
+                            "Examples:\n"
+                            'أضف بالآخر تحياتي → {"field":"body","op":"append","value":"تحياتي"}\n'
+                            'غيّر الموضوع لاجتماع بكرا → {"field":"subject","op":"replace","value":"اجتماع بكرا"}\n'
+                            'كيف حالك → {"field":null}'
                         ),
                     },
                     {
