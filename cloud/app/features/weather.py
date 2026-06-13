@@ -36,7 +36,6 @@ def get_weather(city: str = "October City", **kwargs) -> Optional[Dict[str, Any]
         return None
 
     try:
-
         current = data["current_condition"][0]
         today = data["weather"][0]
         astronomy = today["astronomy"][0]

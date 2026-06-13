@@ -26,7 +26,7 @@ def init_sentry(app_env: str = None, app: Optional[object] = None) -> None:
     sentry_dsn = os.environ.get("SENTRY_DSN")
 
     if not sentry_dsn:
-        print("[Sentry] SENTRY_DSN not set. Error tracking disabled.", flush=True)
+        logger.warning("[Sentry] SENTRY_DSN not set. Error tracking disabled.")
         return
 
     integrations = [
@@ -51,7 +51,7 @@ def init_sentry(app_env: str = None, app: Optional[object] = None) -> None:
         before_send=_sentry_before_send,
     )
 
-    print(f"[Sentry] initialized for {app_env} environment", flush=True)
+    logger.info(f"[Sentry] initialized for {app_env} environment")
 
 
 def _sentry_before_send(event: dict, hint: dict) -> Optional[dict]:

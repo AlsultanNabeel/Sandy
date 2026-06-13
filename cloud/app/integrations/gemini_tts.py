@@ -14,6 +14,9 @@ from io import BytesIO
 from typing import Optional
 
 from app.utils.circuit_breaker import CircuitBreaker, CircuitOpenError
+import logging
+
+logger = logging.getLogger(__name__)
 
 _cb = CircuitBreaker(name="gemini_tts", failure_threshold=3, recovery_timeout=120.0)
 
@@ -37,7 +40,7 @@ def _get_genai_client(api_key: str):
 
         _genai_client = genai.Client(api_key=api_key)
         _genai_client_key = api_key
-        print("[Gemini TTS] client initialised")
+        logger.info("[Gemini TTS] client initialised")
     return _genai_client
 
 _SAMPLE_RATE = 22050
@@ -128,17 +131,17 @@ def synthesize_voice_with_gemini(
 
     _api_key = api_key or os.getenv("GEMINI_API_KEY", "")
     if not _api_key:
-        print("[Gemini TTS] no API key configured")
+        logger.info("[Gemini TTS] no API key configured")
         return None
 
     try:
         result = _cb.call(_do_synthesize, text, mood, _api_key)
         if result:
-            print(f"[Gemini TTS] {len(result)} bytes, mood={mood}")
+            logger.info(f"[Gemini TTS] {len(result)} bytes, mood={mood}")
         return result
     except CircuitOpenError:
-        print("[Gemini TTS] circuit open, skipping to fallback")
+        logger.info("[Gemini TTS] circuit open, skipping to fallback")
         return None
     except Exception as e:
-        print(f"[Gemini TTS] {e}")
+        logger.info(f"[Gemini TTS] {e}")
         return None

@@ -25,11 +25,18 @@ from app.utils.user_profiles import active_profile_allows_privileged_access
 SCOPES = UNIFIED_SCOPES
 
 _CLOUD_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-TOKEN_FILE = os.getenv("GOOGLE_TASKS_TOKEN_FILE") or os.path.join(
-    _CLOUD_DIR, "google-tasks-token.json"
+# Gmail and the old Tasks integration share one Google OAuth project, so these
+# files historically carried the TASKS_ prefix. Prefer the Gmail-specific names;
+# fall back to the legacy TASKS names so existing Heroku config keeps working.
+TOKEN_FILE = (
+    os.getenv("GMAIL_TOKEN_FILE")
+    or os.getenv("GOOGLE_TASKS_TOKEN_FILE")
+    or os.path.join(_CLOUD_DIR, "google-tasks-token.json")
 )
-CREDS_FILE = os.getenv("GOOGLE_TASKS_OAUTH_FILE") or os.path.join(
-    _CLOUD_DIR, "google-tasks-oauth.json"
+CREDS_FILE = (
+    os.getenv("GMAIL_OAUTH_FILE")
+    or os.getenv("GOOGLE_TASKS_OAUTH_FILE")
+    or os.path.join(_CLOUD_DIR, "google-tasks-oauth.json")
 )
 
 _GMAIL_SERVICE = None

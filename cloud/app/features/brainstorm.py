@@ -185,9 +185,9 @@ def finish_session(
     # نصّ النقاش من STM — هو الأساس للتلخيص (مش بس النقاط المسجّلة)
     conversation = ""
     try:
-        from app.agent.graph.graph import _stm_load
+        from app.agent.graph.graph import load_stm
         cid = str(chat_id)
-        msgs = _stm_load(cid, cid)
+        msgs = load_stm(cid, cid)
         lines = []
         for m in msgs:
             who = "نبيل" if m.get("role") == "user" else "ساندي"

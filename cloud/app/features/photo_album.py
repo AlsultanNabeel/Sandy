@@ -157,7 +157,7 @@ def generate_tags(image_bytes: bytes, create_chat_completion_fn) -> Tuple[str, L
         tags = [str(t).strip() for t in (data.get("tags") or []) if str(t).strip()]
         return caption, tags
     except Exception as e:  # noqa: BLE001
-        logger.debug("[photo_album] generate_tags failed: %s", e)
+        logger.info("[photo_album] generate_tags failed (no tags saved): %s", e)
         return "", []
 
 

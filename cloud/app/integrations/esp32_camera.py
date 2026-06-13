@@ -8,6 +8,9 @@ from __future__ import annotations
 from typing import Optional
 
 from app.integrations.sandy_device import get_sandy_device_client
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ESP32CameraClient:
@@ -38,5 +41,5 @@ def get_camera_client() -> ESP32CameraClient:
     global _client
     if _client is None:
         _client = ESP32CameraClient()
-        print("[Camera] client initialized (MQTT-based)")
+        logger.info("[Camera] client initialized (MQTT-based)")
     return _client

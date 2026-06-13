@@ -474,22 +474,32 @@ def delete_completed_tasks(mongo_db=None, tasks_file=None) -> int:
         return 0
 
 
-def save_tasks(tasks: List[Dict[str, Any]], mongo_db=None, tasks_file=None):
-    """Compatibility shim from the Google era: only clear-all is supported."""
+def clear_all_tasks(mongo_db=None) -> int:
+    """Delete every task. The explicit operation that the google-era
+    save_tasks([]) wipe used to hide. Returns how many were deleted."""
     try:
         _require_owner()
         coll = _coll(mongo_db)
         if coll is None:
-            return
-        if tasks != []:
-            print("[TasksStore] save_tasks ignored (partial sync unsupported)")
-            return
+            return 0
         r = coll.delete_many({})
         print(f"[TasksStore] cleared all tasks: {r.deleted_count}")
+        return r.deleted_count
     except PermissionError:
         raise
     except Exception as e:
         print(f"[TasksStore] clear-all failed: {e}")
+        return 0
+
+
+def save_tasks(tasks: List[Dict[str, Any]], mongo_db=None, tasks_file=None):
+    """Compatibility shim from the Google era. Only the clear-all case (an empty
+    list) is supported, and it just delegates to clear_all_tasks(); a non-empty
+    list is ignored (partial sync was never supported)."""
+    if tasks != []:
+        print("[TasksStore] save_tasks ignored (partial sync unsupported)")
+        return
+    clear_all_tasks(mongo_db)
 
 
 # Re-exports — same convenience surface google_tasks offered.

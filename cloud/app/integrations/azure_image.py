@@ -52,7 +52,8 @@ def _decode_image_response(response) -> Optional[bytes]:
     if b64:
         try:
             return base64.b64decode(b64)
-        except Exception:
+        except Exception as e:
+            logger.debug("[azure_image] base64 decode failed: %s", e)
             return None
     url = getattr(item, "url", None)
     if url:

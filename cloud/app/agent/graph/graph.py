@@ -33,6 +33,11 @@ logger = logging.getLogger(__name__)
 # مزامنة STM
 
 
+def load_stm(chat_id: str, user_id: str) -> List[Dict[str, Any]]:
+    """Public STM accessor for callers outside the graph (e.g. brainstorm)."""
+    return _stm_load(chat_id, user_id)
+
+
 def _stm_load(chat_id: str, user_id: str) -> List[Dict[str, Any]]:
     """Read STM from Redis (synchronous)."""
     try:

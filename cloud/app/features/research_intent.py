@@ -221,7 +221,8 @@ def is_research_request(message: str) -> bool:
     text = (message or "").strip().lower()
     if is_place_request(text):
         return False
-    triggers = [
+    # Strong triggers: an explicit search / news / study word — always research.
+    strong_triggers = [
         "ابحث",
         "ابحثي",
         "ابحثو",
@@ -252,14 +253,15 @@ def is_research_request(message: str) -> bool:
         "admission",
         "ielts",
         "toefl",
-        "ما هو",
-        "ما هي",
-        "كيف",
-        "why",
-        "what is",
-        "who is",
     ]
-    return any(t in text for t in triggers)
+    if any(t in text for t in strong_triggers):
+        return True
+    # Generic question words fire a search only for a real question, not casual
+    # chat — "كيف حالك" stays a chat, "ما هو أفضل لابتوب للبرمجة" is research.
+    generic_triggers = ["ما هو", "ما هي", "كيف", "why", "what is", "who is"]
+    if len(text.split()) >= 4 and any(t in text for t in generic_triggers):
+        return True
+    return False
 
 
 def is_research_followup_request(message: str) -> bool:

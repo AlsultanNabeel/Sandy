@@ -82,6 +82,11 @@ class AzureIntentClient:
         ).strip()
         self._model = model  # for test mocks
 
+    def generate_text(self, prompt: str, **kwargs) -> str:
+        """Public one-shot text generation. New code should call this instead of
+        the legacy ``_generate_with_gemini`` name (kept for backward compat)."""
+        return self._generate_with_gemini(prompt, **kwargs)
+
     def _generate_with_gemini(
         self,
         prompt: str,
@@ -175,9 +180,13 @@ class AzureIntentClient:
             if details is not None:
                 cached = getattr(details, "cached_tokens", 0) or 0
             non_cached_in = max(in_tok - cached, 0)
-            # gpt-4o-mini: $0.15/1M input ($0.075 للـ cached) + $0.60/1M output
+            # Rates default to gpt-4o-mini ($/1M); override via env if the
+            # deployment points at another model so the logged estimate stays right.
+            rate_in = float(os.getenv("AZURE_COST_IN_PER_1M", "0.15"))
+            rate_cached = float(os.getenv("AZURE_COST_CACHED_PER_1M", "0.075"))
+            rate_out = float(os.getenv("AZURE_COST_OUT_PER_1M", "0.60"))
             cost = (
-                non_cached_in * 0.15 + cached * 0.075 + out_tok * 0.60
+                non_cached_in * rate_in + cached * rate_cached + out_tok * rate_out
             ) / 1_000_000
             if cached:
                 pct = (cached / in_tok * 100) if in_tok else 0

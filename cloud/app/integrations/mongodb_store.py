@@ -70,8 +70,11 @@ def init_mongo_connection(
             )
             mongo_client.admin.command("ping")
             mongo_db = mongo_client[mongodb_db_name]
-            logger.info(
-                "[MongoDB] connected with fallback TLS mode (db=%s)", mongodb_db_name
+            # Loud on purpose: this path disables cert validation (MITM risk), so
+            # it must not pass unnoticed if it ever becomes the normal route.
+            logger.warning(
+                "[MongoDB] connected with FALLBACK TLS mode — cert validation "
+                "disabled (db=%s)", mongodb_db_name
             )
             return mongo_client, mongo_db
 

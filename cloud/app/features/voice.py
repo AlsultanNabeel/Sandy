@@ -85,7 +85,7 @@ def _summarize_for_tts(text: str, mood: str = "neutral", user_message: str = "")
     try:
         from app.integrations.azure_intent_client import AzureIntentClient
         client = AzureIntentClient()
-        summary = client._generate_with_gemini(
+        summary = client.generate_text(
             prompt,
             response_mime_type="text/plain",
             temperature=0.7,

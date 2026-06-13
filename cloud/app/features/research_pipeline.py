@@ -134,7 +134,10 @@ def is_official_source_url(url: str, research_type: str = "general") -> bool:
             ]
         )
     if research_type == "news":
-        return any(h in lowered for h in [".com", ".org", ".net"])
+        # News accepts any non-blocked source: the blocked list above already
+        # drops aggregators and social. The old .com/.org/.net test let through
+        # virtually everything, so it was a no-op — say so explicitly.
+        return True
     return True
 
 
@@ -237,6 +240,15 @@ def extract_structured_page_data(
         }
 
 
+# Institution hints → (country, city). A small data table instead of hand-written
+# if-blocks: add a row (name/url substrings, country, city) to cover a new school.
+_EDU_INSTITUTION_HINTS = [
+    (("valencia", "universitat politècnica de valència", "upv.es"), "Spain", "Valencia"),
+    (("universidad de alicante", "ua.es"), "Spain", "Alicante"),
+    (("carlos iii", "uc3m.es"), "Spain", ""),
+]
+
+
 def normalize_education_page_data(
     page_data: Dict[str, Any], source_url: str = ""
 ) -> Dict[str, Any]:
@@ -277,25 +289,13 @@ def normalize_education_page_data(
     src_lower = source_url.lower()
     inst_lower = cv("institution_name").lower()
 
-    if (
-        "valencia" in inst_lower
-        or "universitat politècnica de valència" in inst_lower
-        or "upv.es" in src_lower
-    ):
-        if cleaned.get("country", "").lower() not in {"spain", "españa", "espana", ""}:
-            cleaned["country"] = "Spain"
-        if cleaned.get("city", "").lower() not in {"valencia", ""}:
-            cleaned["city"] = "Valencia"
-
-    if "universidad de alicante" in inst_lower or "ua.es" in src_lower:
-        if cleaned.get("country", "").lower() not in {"spain", "españa", "espana", ""}:
-            cleaned["country"] = "Spain"
-        if cleaned.get("city", "").lower() not in {"alicante", ""}:
-            cleaned["city"] = "Alicante"
-
-    if "carlos iii" in inst_lower or "uc3m.es" in src_lower:
-        if cleaned.get("country", "").lower() not in {"spain", "españa", "espana", ""}:
-            cleaned["country"] = "Spain"
+    for needles, country, city in _EDU_INSTITUTION_HINTS:
+        if any(n in inst_lower for n in needles) or any(n in src_lower for n in needles):
+            if cleaned.get("country", "").lower() not in {"spain", "españa", "espana", ""}:
+                cleaned["country"] = country
+            if city and cleaned.get("city", "").lower() not in {city.lower(), ""}:
+                cleaned["city"] = city
+            break
 
     return cleaned
 

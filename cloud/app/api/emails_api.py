@@ -64,7 +64,7 @@ def _gemini_text(prompt: str, max_tokens: int = 500) -> str:
         from app.integrations.azure_intent_client import AzureIntentClient
 
         return (
-            AzureIntentClient()._generate_with_gemini(
+            AzureIntentClient().generate_text(
                 prompt,
                 response_mime_type="text/plain",
                 max_output_tokens=max_tokens,

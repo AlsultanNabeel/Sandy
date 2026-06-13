@@ -85,7 +85,11 @@ def create_chat_completion(
         raise RuntimeError("[OpenAI] Circuit OPEN — AI service temporarily unavailable")
     finally:
         try:
-            metrics.observe_llm_completion(time.perf_counter() - started)
+            # On the stream path `started→here` is just the time to OPEN the
+            # stream, not the full completion — recording it would skew the
+            # latency metric, so only observe duration for non-stream calls.
+            if not stream:
+                metrics.observe_llm_completion(time.perf_counter() - started)
             if success:
                 metrics.inc_llm_completion_success()
             else:

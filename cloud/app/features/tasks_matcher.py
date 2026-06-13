@@ -201,7 +201,7 @@ def resolve_task_references_for_write(
     if not refs:
         refs = [
             part.strip()
-            for part in re.split(r"\s*(?:،|,|/|وو| و | and )\s*", raw_reference)
+            for part in re.split(r"\s*(?:،|,|/| و | and )\s*", raw_reference)
             if part.strip()
         ]
 
@@ -373,7 +373,7 @@ def resolve_completed_task_references_for_write(
     if not refs:
         refs = [
             part.strip()
-            for part in re.split(r"\s*(?:،|,|/|وو| و | and )\s*", raw_reference)
+            for part in re.split(r"\s*(?:،|,|/| و | and )\s*", raw_reference)
             if part.strip()
         ]
 
