@@ -4,11 +4,14 @@ Every few minutes the scheduler calls check_new_important_emails():
   1. pull unread inbox messages
   2. drop ones we've already judged (Mongo sandy_email_seen — every message
      gets judged exactly once, alert or not)
-  3. one batched model call classifies the new ones
-  4. Telegram alert for the important ones only
+  3. one batched model call classifies the new ones AND writes a
+     secretary-style Arabic summary for each important one
+  4. Telegram alert for the important ones only — Sandy's Arabic
+     explanation (who/what/why), no raw English subject
 
-Newsletters, promos and notification noise stay silent. Failures fail soft:
-no Mongo → skip (better silent than spammy on re-judged mail).
+Newsletters, promos, notification noise and routine receipts (Uber, order
+confirmations) stay silent. Failures fail soft: no Mongo → skip (better
+silent than spammy on re-judged mail).
 """
 
 from __future__ import annotations
@@ -58,17 +61,24 @@ def _mark_seen(emails: List[Dict[str, Any]]) -> None:
 
 
 def _classify_important(emails: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """One model call; returns the subset judged important (with a reason)."""
+    """One model call; returns the subset judged important, each with a
+    secretary-style Arabic summary (who sent it, what they want, why it matters)."""
     listing = "\n".join(
         f"{i}. من: {e.get('sender','')} | الموضوع: {e.get('subject','')} | "
         f"مقتطف: {e.get('snippet','')}"
         for i, e in enumerate(emails)
     )
     prompt = (
-        "أنت مصنّف بريد. حدد أي الرسائل التالية مهمة وتستحق تنبيه صاحبها فوراً "
-        "(شخصية، عمل حقيقي، مواعيد، فواتير مستحقة، أمن حساب). "
-        "النشرات والإعلانات والإشعارات الآلية ليست مهمة.\n"
-        'أرجع JSON فقط: {"important": [{"index": 0, "reason": "سبب بكلمتين"}]}\n\n'
+        "أنتِ سكرتيرة نبيل الشخصية. مهمتك تقرئي بريده (أغلبه إنجليزي ومبعثر) "
+        "وتختاري المهم فقط، وتشرحيه له بالعربي بجملة واحدة واضحة كأنك بتلخصي له.\n\n"
+        "ما هو المهم: رسالة شخصية من إنسان، عمل حقيقي، موعد/اجتماع، فاتورة مستحقة فعلاً، "
+        "أمان حساب (تسجيل دخول مريب/كلمة سر)، أو إيصال بمبلغ كبير غير معتاد.\n"
+        "ما هو غير مهم (اكتميه تماماً): النشرات والإعلانات والعروض، الإشعارات الآلية، "
+        "وإيصالات الطلبات الروتينية (أوبر، تأكيد طلب، إيصال شراء عادي). "
+        "مثال: إيصال أوبر عادي = غير مهم، لا تنبهي عليه.\n\n"
+        "لكل رسالة مهمة أعطي ملخص عربي بصوت سكرتيرة: مين بعت + شو بدّو منك + ليش مهم. "
+        "مثال: «وصلك إيميل من بنك فلسطين بدّهم يأكدوا تحويلة ٥٠٠ شيكل — لازم توافق خلال ٢٤ ساعة».\n\n"
+        'أرجعي JSON فقط: {"important": [{"index": 0, "summary": "الشرح العربي بجملة"}]}\n\n'
         + listing
     )
     try:
@@ -77,8 +87,8 @@ def _classify_important(emails: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         raw = AzureIntentClient()._generate_with_gemini(
             prompt,
             response_mime_type="application/json",
-            max_output_tokens=300,
-            temperature=0.1,
+            max_output_tokens=700,
+            temperature=0.2,
         )
         data = json.loads(raw or "{}")
         out = []
@@ -86,7 +96,7 @@ def _classify_important(emails: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             idx = int(item.get("index", -1))
             if 0 <= idx < len(emails):
                 e = dict(emails[idx])
-                e["reason"] = str(item.get("reason", "") or "").strip()
+                e["summary"] = str(item.get("summary", "") or "").strip()
                 out.append(e)
         return out
     except Exception as e:  # noqa: BLE001
@@ -111,13 +121,13 @@ def check_new_important_emails(send_message_fn=None, user_chat_id=None):
         important = _classify_important(fresh)
         for e in important:
             sender = (e.get("sender", "") or "").split("<", 1)[0].strip()
-            reason = f" — {e['reason']}" if e.get("reason") else ""
-            text = (
-                f"📨 إيميل مهم{reason}\n"
-                f"من: {sender}\n"
-                f"الموضوع: {e.get('subject', '(بدون عنوان)')}\n"
-                f"المعاينة: {e.get('snippet', '')}"
-            )
+            summary = (e.get("summary", "") or "").strip()
+            # Sandy's Arabic explanation only — no raw English subject/snippet.
+            # Soft fallback if the model gave no summary: just name the sender.
+            if summary:
+                text = f"📨 {summary}\n من: {sender}"
+            else:
+                text = f"📨 وصلك إيميل مهم من: {sender or 'مرسِل غير معروف'}"
             try:
                 send_message_fn(int(user_chat_id), text, parse_mode=None)
             except Exception as send_err:
