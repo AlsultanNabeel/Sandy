@@ -35,14 +35,15 @@ live instead of sending files.
 | Voice | STT with Azure Speech. TTS with Gemini 3.1 Flash TTS first, then Google or Azure as fallback. Tone follows her mood |
 | Tasks | Add, edit, complete, delete, priorities and projects. Stored in MongoDB, with a confirmation before anything destructive |
 | Reminders | Create, edit, snooze, delete. Recurring (daily/weekly/monthly), linked to tasks, snooze buttons in Telegram |
-| Life tracking | Shopping list, habits with streaks, expenses, journal, reading sessions, and a focus mode |
+| Life tracking | Shopping list (categories, price/qty memory, auto-linked to expenses), habits with streaks, expenses, journal, Bookly-style reading (author/category/star rating/format, notes & quotes, annual goal, streak & pages/day), and a Pomodoro focus mode bound to room scenes |
+| Room scenes | Saved scenes (study, read, brainstorm, relax, movie, sleep, morning, off) drive a room node over MQTT — lights, color, music, fan, curtain — with optional timed reverts per action |
 | Email (Gmail) | Read the inbox, send, reply, watch for important mail. Web inbox with actions: archive, turn into a task, Arabic summary, drafted replies |
 | Research | News, places, and deep web research with Exa |
 | Images | Generate and edit with Azure FLUX (DALL·E / gpt-image as fallback), plus image description with Vision |
 | Documents | Read and analyze TXT, PDF, DOCX, CSV, XLSX, JSON |
 | Memory | MongoDB plus an encrypted emotional long-term memory (Fernet) |
 | GitHub | Read commits, issues, PRs, and files over MCP |
-| Hardware | Control the face, head, buzzer, and camera over MQTT |
+| Hardware | Control the face (25 moods), head, buzzer (6 melodies), and camera over MQTT, plus a separate room node (lights/color/music/fan/curtain) |
 | Reports | Cost reports for Heroku, Azure, AWS, and Google Cloud |
 | Project Builder | Build a whole feature or project in another repo after the owner approves (runs on the worker dyno) |
 
@@ -53,7 +54,8 @@ live instead of sending files.
 A bilingual (Arabic / English) React + Vite site. Same Sandy, same backend, in
 the browser. It lives in its own git repo under `frontend/`.
 
-- Pages: Home, Studio (chat, search, and images, plus tabs for tasks, reminders, emails, brainstorms, projects, my life, and the robot dashboard), Meet Sandy (voice, memory, timeline), Projects, Status, Privacy, Terms.
+- Pages: Home (an owner dashboard — quick-add, today's tasks/reminders/emails, plus reading/habits/spending/focus widgets and shortcuts; guests see a light welcome and the marketing lives on "Meet Sandy"), Studio (chat, search, and images, plus tabs for tasks, reminders, emails, focus, projects, my life, and the robot dashboard), Meet Sandy (voice, memory, timeline), Projects, Status, Privacy, Terms.
+- Focus tab: start a Pomodoro (focus/break/cycles bound to a room scene), watch the live phase/cycle/time-left, edit room scenes (per-action device/value plus timed reverts), and pick the robot's melody for each focus event. My Life tab: shopping, habits, expenses, journal, and the Bookly-style reading view with per-book detail, notes, quotes, and the annual goal.
 - Bilingual: an AR/EN toggle flips every string, the page direction (RTL/LTR), and the font (Cairo/Inter). Sandy answers in the active language. The site sends `lang` to `/api/agent` and `/api/analyze-image`, and she replies in that language with the same personality.
 - Owner vs guest: the owner logs in for full access (real tasks, reminders, emails, and life data, plus the full pipeline). Guests see demo data in the productivity tabs and get a rate-limited Sandy with in-chat owner approval.
 - Projects list: the Projects page reads the owner's GitHub repos and shows the ones tagged with the `sandy` topic that have Pages enabled, each as a live `iframe` preview. Projects that Sandy builds (repo plus `sandy` topic plus Pages, README stamped "Created by Sandy") show up here on their own.
@@ -296,8 +298,8 @@ Sandy/
 │       ├── config.py  bootstrap.py
 │       ├── agent/              # graph/ · nodes/ · agents/ · tools/ · executor/ · facade/ · project_builder/ + humanization
 │       ├── api/                # webhook.py · telegram_handlers.py · telegram_runtime.py
-│       ├── features/           # voice · vision · images · research · gmail · life stores · weather
-│       ├── integrations/       # azure · gemini_tts · google_tts · azure_speech · mongodb · mcp · exa · github · sandy_device(MQTT)
+│       ├── features/           # voice · vision · images · research · gmail · email_watch · life stores (tasks/reminders/shopping/habits/expenses/journal/reading/focus/scene) · weather
+│       ├── integrations/       # azure · gemini_tts · google_tts · azure_speech · mongodb · mcp · exa · github · sandy_device(MQTT robot) · room_device(MQTT room node)
 │       ├── tools/              # heroku_tool · cost_tool
 │       └── utils/              # redis_stm · rate_limiter · circuit_breaker · metrics · text · time ...
 ├── sandy/  esp32cam_Camera/    # ESP32 firmware (Arduino C++)
