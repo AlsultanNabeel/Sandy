@@ -52,6 +52,12 @@ def _find_habit(name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _find_by_id(habit_id: str) -> Optional[Dict[str, Any]]:
+    if not habit_id or _mongo_db is None:
+        return None
+    return _mongo_db[_HABITS].find_one({"_id": habit_id})
+
+
 def add_habit(name: str) -> bool:
     _require_owner()
     if _mongo_db is None:
@@ -131,3 +137,91 @@ def list_habits() -> List[Dict[str, Any]]:
             }
         )
     return out
+
+
+def delete_habit(habit_id: str) -> bool:
+    """حذف نهائي: العادة + كل سجلّاتها (مش أرشفة)."""
+    _require_owner()
+    h = _find_by_id(habit_id)
+    if not h or _mongo_db is None:
+        return False
+    _mongo_db[_LOG].delete_many({"habit_id": habit_id})
+    _mongo_db[_HABITS].delete_one({"_id": habit_id})
+    return True
+
+
+def rename_habit(habit_id: str, new_name: str) -> bool:
+    """إعادة تسمية العادة (بعد فحص التكرار مع عادة أخرى نشطة)."""
+    _require_owner()
+    new_name = str(new_name or "").strip()
+    h = _find_by_id(habit_id)
+    if not h or not new_name or _mongo_db is None:
+        return False
+    dup = _find_habit(new_name)
+    if dup and dup.get("_id") != habit_id:
+        return False
+    _mongo_db[_HABITS].update_one({"_id": habit_id}, {"$set": {"name": new_name}})
+    return True
+
+
+def uncheckin(habit_id: str, date: str = "") -> Dict[str, Any]:
+    """يتراجع عن إنجاز يوم (افتراضياً اليوم). يرجّع {ok, streak, removed}."""
+    _require_owner()
+    h = _find_by_id(habit_id)
+    if not h or _mongo_db is None:
+        return {"ok": False}
+    d = (date or _today())[:10]
+    res = _mongo_db[_LOG].delete_one({"_id": f"{habit_id}:{d}"})
+    return {"ok": True, "streak": _streak(habit_id), "removed": res.deleted_count > 0}
+
+
+def habit_history(habit_id: str, days: int = 35) -> Dict[str, Any]:
+    """تفاصيل عادة: أيام الإنجاز بآخر فترة، أطول سلسلة، ونسبة الالتزام منذ الإنشاء."""
+    _require_owner()
+    h = _find_by_id(habit_id)
+    if not h or _mongo_db is None:
+        return {"ok": False}
+    all_dates = sorted(
+        d["date"]
+        for d in _mongo_db[_LOG].find({"habit_id": habit_id}, {"date": 1}).limit(5000)
+    )
+    date_set = set(all_dates)
+    today = datetime.now(USER_TZ).date()
+
+    # أيام آخر فترة (للعرض كنقاط) مع علم الإنجاز
+    window = []
+    for i in range(days - 1, -1, -1):
+        day = (today - timedelta(days=i)).isoformat()
+        window.append({"date": day, "done": day in date_set})
+
+    # أطول سلسلة متتالية على الإطلاق
+    longest = 0
+    run = 0
+    prev = None
+    for ds in all_dates:
+        cur = datetime.fromisoformat(ds).date()
+        if prev is not None and (cur - prev).days == 1:
+            run += 1
+        else:
+            run = 1
+        longest = max(longest, run)
+        prev = cur
+
+    # نسبة الالتزام منذ الإنشاء (أيام منجزة / أيام منقضية)
+    created = h.get("created_at")
+    try:
+        start = created.astimezone(USER_TZ).date() if created else today
+    except Exception:  # noqa: BLE001
+        start = today
+    elapsed = max(1, (today - start).days + 1)
+    rate = round(100 * len(date_set) / elapsed)
+
+    return {
+        "ok": True,
+        "id": habit_id,
+        "name": h.get("name", ""),
+        "window": window,
+        "longest": longest,
+        "rate": min(100, rate),
+        "total_done": len(date_set),
+    }

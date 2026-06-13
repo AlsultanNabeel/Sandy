@@ -166,6 +166,47 @@ def register_life_api(app, mongo_db=None):
             r = checkin(name)
         return jsonify(r), (200 if r.get("ok") else 404)
 
+    @app.route("/api/life/habits/uncheckin", methods=["POST"])
+    @require_owner
+    def api_habits_uncheckin(claims):
+        body = request.get_json(silent=True) or {}
+        habit_id = (body.get("id") or "").strip()
+        from app.features.habits_store import uncheckin
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            r = uncheckin(habit_id)
+        return jsonify(r), (200 if r.get("ok") else 404)
+
+    @app.route("/api/life/habits/detail", methods=["GET"])
+    @require_owner
+    def api_habits_detail(claims):
+        habit_id = (request.args.get("id") or "").strip()
+        from app.features.habits_store import habit_history
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            r = habit_history(habit_id)
+        return jsonify(r), (200 if r.get("ok") else 404)
+
+    @app.route("/api/life/habits/<habit_id>", methods=["PATCH"])
+    @require_owner
+    def api_habits_rename(habit_id, claims):
+        body = request.get_json(silent=True) or {}
+        name = (body.get("name") or "").strip()
+        from app.features.habits_store import rename_habit
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            ok = rename_habit(habit_id, name)
+        return jsonify({"ok": ok}), (200 if ok else 400)
+
+    @app.route("/api/life/habits/<habit_id>", methods=["DELETE"])
+    @require_owner
+    def api_habits_delete(habit_id, claims):
+        from app.features.habits_store import delete_habit
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            ok = delete_habit(habit_id)
+        return jsonify({"ok": ok}), (200 if ok else 404)
+
     # ── المصاريف ────────────────────────────────────────────────────────
     @app.route("/api/life/expenses", methods=["GET"])
     @require_auth
@@ -194,6 +235,15 @@ def register_life_api(app, mongo_db=None):
             )
         return jsonify({"ok": ok}), (200 if ok else 400)
 
+    @app.route("/api/life/expenses/<expense_id>", methods=["DELETE"])
+    @require_owner
+    def api_expenses_delete(expense_id, claims):
+        from app.features.expenses_store import delete_expense
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            ok = delete_expense(expense_id)
+        return jsonify({"ok": ok}), (200 if ok else 404)
+
     # ── اليوميات ────────────────────────────────────────────────────────
     @app.route("/api/life/journal", methods=["GET"])
     @require_auth
@@ -219,6 +269,15 @@ def register_life_api(app, mongo_db=None):
         with active_user_profile_context(_OWNER_PROFILE):
             ok = add_entry(text)
         return jsonify({"ok": ok}), 200
+
+    @app.route("/api/life/journal/<entry_id>", methods=["DELETE"])
+    @require_owner
+    def api_journal_delete(entry_id, claims):
+        from app.features.journal_store import delete_entry
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            ok = delete_entry(entry_id)
+        return jsonify({"ok": ok}), (200 if ok else 404)
 
     # ── القراءة ─────────────────────────────────────────────────────────
     @app.route("/api/life/books", methods=["GET"])
