@@ -45,6 +45,14 @@ _DEMO = {
         {"id": "d2", "title": "الخيميائي", "status": "done", "total_pages": 198, "current_page": 198, "cover_url": ""},
         {"id": "d3", "title": "قوة التركيز", "status": "wishlist", "total_pages": 0, "current_page": 0, "cover_url": ""},
     ],
+    "scenes": [
+        {"name": "study", "label": "دراسة", "icon": "📚", "builtin": True,
+         "actions": [{"device": "light", "value": "85"}, {"device": "music", "value": "off"}]},
+        {"name": "relax", "label": "راحة", "icon": "🌙", "builtin": True,
+         "actions": [{"device": "light", "value": "35"}, {"device": "music", "value": "on"}]},
+        {"name": "movie", "label": "فيلم", "icon": "🎬", "builtin": True,
+         "actions": [{"device": "light", "value": "10"}, {"device": "curtain", "value": "close"}]},
+    ],
 }
 
 
@@ -251,4 +259,98 @@ def register_life_api(app, mongo_db=None):
             r = set_book_status(
                 (body.get("title") or "").strip(), (body.get("status") or "").strip()
             )
+        return jsonify(r), (200 if r.get("ok") else 404)
+
+    # ── مشاهد الغرفة + التركيز ───────────────────────────────────────────
+    @app.route("/api/life/scenes", methods=["GET"])
+    @require_auth
+    def api_scenes(claims):
+        if not _owner(claims):
+            return jsonify({"items": _DEMO["scenes"], "demo": True}), 200
+        from app.features.scene_store import list_scenes
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            items = list_scenes()
+        return jsonify({"items": items, "demo": False}), 200
+
+    @app.route("/api/life/scenes", methods=["POST"])
+    @require_owner
+    def api_scene_add(claims):
+        body = request.get_json(silent=True) or {}
+        from app.features.scene_store import add_scene
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            r = add_scene(
+                (body.get("name") or "").strip(),
+                label=(body.get("label") or "").strip(),
+                icon=(body.get("icon") or "🎛️").strip(),
+                actions=body.get("actions") or [],
+            )
+        return jsonify(r), (200 if r.get("ok") else 400)
+
+    @app.route("/api/life/scenes/actions", methods=["POST"])
+    @require_owner
+    def api_scene_actions(claims):
+        body = request.get_json(silent=True) or {}
+        from app.features.scene_store import set_scene_actions
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            r = set_scene_actions((body.get("name") or "").strip(), body.get("actions") or [])
+        return jsonify(r), (200 if r.get("ok") else 400)
+
+    @app.route("/api/life/scenes/apply", methods=["POST"])
+    @require_owner
+    def api_scene_apply(claims):
+        body = request.get_json(silent=True) or {}
+        from app.features.scene_store import apply_scene
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            r = apply_scene((body.get("name") or "").strip())
+        return jsonify(r), (200 if r.get("ok") else 404)
+
+    @app.route("/api/life/scenes/delete", methods=["POST"])
+    @require_owner
+    def api_scene_delete(claims):
+        body = request.get_json(silent=True) or {}
+        from app.features.scene_store import delete_scene
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            r = delete_scene((body.get("name") or "").strip())
+        return jsonify(r), (200 if r.get("ok") else 404)
+
+    @app.route("/api/life/focus", methods=["GET"])
+    @require_auth
+    def api_focus_status(claims):
+        if not _owner(claims):
+            return jsonify({"active": False, "demo": True}), 200
+        from app.features.focus_store import focus_status
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            return jsonify(focus_status()), 200
+
+    @app.route("/api/life/focus/start", methods=["POST"])
+    @require_owner
+    def api_focus_start(claims):
+        body = request.get_json(silent=True) or {}
+        from app.features.focus_store import start_focus
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            r = start_focus(
+                focus_min=int(body.get("focus_min", 25) or 25),
+                label=(body.get("label") or "").strip(),
+                break_min=int(body.get("break_min", 0) or 0),
+                cycles=int(body.get("cycles", 1) or 1),
+                scene=(body.get("scene") or "").strip(),
+                end_scene=(body.get("end_scene") or "").strip(),
+            )
+        return jsonify(r), (200 if r.get("ok") else 400)
+
+    @app.route("/api/life/focus/stop", methods=["POST"])
+    @require_owner
+    def api_focus_stop(claims):
+        body = request.get_json(silent=True) or {}
+        from app.features.focus_store import stop_focus
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            r = stop_focus(completed=not bool(body.get("cancel")))
         return jsonify(r), (200 if r.get("ok") else 404)
