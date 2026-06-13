@@ -269,15 +269,20 @@ def focus_start(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
     from app.features.focus_store import start_focus
 
     r = start_focus(
-        minutes=int(args.get("minutes", 25) or 25),
+        focus_min=int(args.get("minutes", 25) or 25),
         label=str(args.get("label", "")),
+        break_min=int(args.get("break_min", 0) or 0),
+        cycles=int(args.get("cycles", 1) or 1),
+        scene=str(args.get("scene", "")),
+        end_scene=str(args.get("end_scene", "")),
     )
     if r.get("ok"):
-        return {
-            "handled": True,
-            "reply": f"🎯 جلسة تركيز {r['minutes']} دقيقة بلشت — "
-                     f"وجه الروبوت معك، وبنبهك لما تخلص. ركّز!",
-        }
+        bits = [f"🎯 جلسة تركيز {r['focus_min']} دقيقة بلشت"]
+        if r.get("cycles", 1) > 1:
+            bits.append(f"— {r['cycles']} دورات، راحة {r['break_min']} دقيقة بين كل وحدة")
+        if r.get("scene"):
+            bits.append(f"· مشهد «{r['scene']}»" + (" شغّلته بالغرفة 🏠" if r.get("scene_online") else " (الغرفة مش متصلة)"))
+        return {"handled": True, "reply": " ".join(bits) + ". ركّز! 💪"}
     if r.get("error") == "already_active":
         return {"handled": True, "reply": "في جلسة تركيز شغالة أصلاً — قول «خلصت» أو «الغي التركيز»."}
     return {"handled": True, "reply": "ما قدرت أبلش الجلسة."}
@@ -301,10 +306,35 @@ def focus_check(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
     s = focus_status()
     if not s.get("active"):
         return {"handled": True, "reply": "ما في جلسة تركيز شغالة 🎯"}
+    phase = "راحة 😌" if s.get("phase") == "break" else "تركيز 🎯"
+    cyc = f" · دورة {s['cycle_idx']}/{s['cycles']}" if s.get("cycles", 1) > 1 else ""
     return {
         "handled": True,
-        "reply": f"🎯 جلسة شغالة — ضايل {s['remaining_min']} دقيقة من أصل {s['minutes']}.",
+        "reply": f"{phase}{cyc} — ضايل {s['remaining_min']} دقيقة.",
     }
+
+
+# ── مشاهد الغرفة ──────────────────────────────────────────────────────────────
+
+def scene_apply(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
+    from app.features.scene_store import apply_scene
+
+    r = apply_scene(str(args.get("name", "")))
+    if not r.get("ok"):
+        return {"handled": True, "reply": "ما عرفت هاد المشهد — جرّب: دراسة، قراءة، عصف ذهني، راحة، فيلم، نوم، صباح، إطفاء."}
+    if not r.get("online"):
+        return {"handled": True, "reply": f"ظبّطت مشهد «{r['label']}» بس الغرفة مش متصلة هلأ — بيشتغل أول ما تتصل 🏠"}
+    return {"handled": True, "reply": f"✨ شغّلت مشهد «{r['label']}» بالغرفة."}
+
+
+def scene_list(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
+    from app.features.scene_store import list_scenes
+
+    scenes = list_scenes()
+    if not scenes:
+        return {"handled": True, "reply": "ما في مشاهد بعد."}
+    lines = [f"{s['icon']} {s['label']}" for s in scenes]
+    return {"handled": True, "reply": "مشاهد الغرفة:\n" + "  ·  ".join(lines)}
 
 
 LIFE_TOOLS = [
@@ -498,12 +528,16 @@ LIFE_TOOLS = [
     },
     {
         "name": "focus_start",
-        "description": "ابدأ جلسة تركيز — «بدي أركز ساعة عالدراسة». الروبوت بساير الجلسة وبنبهك لما تخلص",
+        "description": "ابدأ جلسة تركيز أو بومودورو — «بدي أركز ساعة عالدراسة» أو «بومودورو ٢٥ تركيز ٥ راحة ٤ دورات». بتقدر تربطها بمشهد غرفة (دراسة/قراءة/عصف ذهني...) فيشتغل تلقائياً",
         "parameters": {
             "type": "object",
             "properties": {
-                "minutes": {"type": "number", "description": "المدة بالدقائق (افتراضي 25)"},
+                "minutes": {"type": "number", "description": "مدة التركيز بالدقائق (افتراضي 25)"},
                 "label": {"type": "string", "description": "على شو التركيز (اختياري)"},
+                "break_min": {"type": "number", "description": "مدة الراحة بين الدورات بالدقائق (0 = بدون بومودورو)"},
+                "cycles": {"type": "number", "description": "عدد دورات البومودورو (افتراضي 1)"},
+                "scene": {"type": "string", "description": "مشهد غرفة يشتغل عند البدء: study|read|brainstorm|relax|movie|sleep|morning أو اسم مشهد مخصص"},
+                "end_scene": {"type": "string", "description": "مشهد يشتغل لما تخلص الجلسة (اختياري؛ بدونه الغرفة بتضل على حالها)"},
             },
             "required": [],
         },
@@ -524,5 +558,23 @@ LIFE_TOOLS = [
         "description": "حالة جلسة التركيز — «قديش ضايل؟»",
         "parameters": {"type": "object", "properties": {}, "required": []},
         "handler": focus_check,
+    },
+    {
+        "name": "scene_apply",
+        "description": "شغّل مشهد غرفة (ضو/لون/موسيقى/مروحة...) — «شغّلي وضع الفيلم» أو «جو دراسة». الأوضاع: study|read|brainstorm|relax|movie|sleep|morning|off",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "اسم المشهد: study|read|brainstorm|relax|movie|sleep|morning|off أو مخصص"},
+            },
+            "required": ["name"],
+        },
+        "handler": scene_apply,
+    },
+    {
+        "name": "scene_list",
+        "description": "اعرض مشاهد الغرفة المتاحة",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+        "handler": scene_list,
     },
 ]

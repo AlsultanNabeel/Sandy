@@ -473,6 +473,32 @@ def configure_sandy_scheduler(
         except Exception as e:
             print(f"[SceneTimers] failed: {e}")
 
+    def run_focus_phases():
+        """ينقل جلسة البومودورو لطورها التالي (تركيز↔راحة) ويبعت الإشعار."""
+        if not owner_chat_id:
+            return
+        try:
+            from app.features.focus_store import advance_focus_phase
+            with active_user_profile_context(owner_profile):
+                ev = advance_focus_phase()
+            if not ev:
+                return
+            lbl = f" ({ev['label']})" if ev.get("label") else ""
+            kind = ev.get("event")
+            if kind == "break":
+                msg = (f"🍅 خلصت دورة التركيز {ev['cycle_idx']}/{ev['cycles']}{lbl} — "
+                       f"خذ راحة {ev['break_min']} دقيقة 😌")
+            elif kind == "focus":
+                msg = (f"🎯 رجعنا للتركيز — دورة {ev['cycle_idx']}/{ev['cycles']}{lbl}، "
+                       f"{ev['focus_min']} دقيقة. يلا 💪")
+            elif kind == "done":
+                msg = f"🎉 خلّصت جلسة التركيز{lbl} — {ev['cycles']} دورات. عمل رائع 👏"
+            else:
+                return
+            telegram_bot.send_message(owner_chat_id, msg, parse_mode=None)
+        except Exception as e:
+            print(f"[FocusPhases] failed: {e}")
+
     def log_memory_usage():
         """يطبع استهلاك الذاكرة كل ٥ دقايق — للكشف عن leaks."""
         try:
@@ -537,6 +563,7 @@ def configure_sandy_scheduler(
     scheduler.add_job(weekly_stats, "cron", day_of_week="fri", hour=18, minute=0)
     scheduler.add_job(run_owner_reminders, "interval", minutes=1)
     scheduler.add_job(run_scene_timers, "interval", minutes=1)
+    scheduler.add_job(run_focus_phases, "interval", minutes=1)
     scheduler.add_job(watch_important_emails, "interval", minutes=5)
     scheduler.add_job(
         functools.partial(send_proactive_insight, agent, telegram_bot, owner_chat_id),

@@ -16,7 +16,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from app.utils.time import USER_TZ
 from app.utils.user_profiles import active_profile_allows_privileged_access
 
 _COLL = "sandy_focus"
@@ -60,69 +59,83 @@ def active_focus() -> Optional[Dict[str, Any]]:
     return _mongo_db[_COLL].find_one({"state": "active"})
 
 
-def start_focus(minutes: int = 25, label: str = "") -> Dict[str, Any]:
+def start_focus(focus_min: int = 25, label: str = "", break_min: int = 0,
+                cycles: int = 1, scene: str = "", end_scene: str = "") -> Dict[str, Any]:
+    """يبدأ جلسة تركيز/بومودورو ويشغّل مشهد الغرفة المربوط فيها.
+
+    focus_min/break_min/cycles كلها يحددها المالك. `scene` بيتطبّق عند البداية.
+    `end_scene` (اختياري) بيتطبّق لما تخلص الجلسة كلها — وبدونه الغرفة بتضل
+    على حالها فما يطفّي إشي وإنت لسا موجود. انتقالات الأطوار بتمر عبر
+    advance_focus_phase() اللي بتنده الجدولة كل دقيقة.
+    """
     _require_owner()
     if _mongo_db is None:
         return {"ok": False}
     if active_focus():
         return {"ok": False, "error": "already_active"}
-    minutes = max(5, min(240, int(minutes or 25)))
+    focus_min = max(1, min(240, int(focus_min or 25)))
+    break_min = max(0, min(120, int(break_min or 0)))
+    cycles = max(1, min(12, int(cycles or 1)))
     now = datetime.now(timezone.utc)
-    ends = now + timedelta(minutes=minutes)
 
-    reminder_id = ""
-    try:
-        from app.features.reminders_store import add_reminder
-
-        label_txt = f" ({label})" if label else ""
-        r = add_reminder(
-            text=f"🎉 خلصت جلسة التركيز{label_txt} — {minutes} دقيقة! خذ استراحة",
-            remind_at_iso=ends.astimezone(USER_TZ).isoformat(),
-        )
-        if r.get("success"):
-            reminder_id = r.get("id", "")
-    except Exception as e:  # noqa: BLE001
-        print(f"[FocusStore] end reminder failed: {e}")
+    scene_result = None
+    if scene:
+        try:
+            from app.features.scene_store import apply_scene
+            scene_result = apply_scene(scene)
+        except Exception as e:  # noqa: BLE001
+            print(f"[FocusStore] scene apply failed: {e}")
 
     _mongo_db[_COLL].insert_one(
         {
             "_id": uuid.uuid4().hex,
             "label": str(label or "").strip(),
-            "minutes": minutes,
+            "scene": str(scene or "").strip().lower(),
+            "end_scene": str(end_scene or "").strip().lower(),
+            "focus_min": focus_min,
+            "break_min": break_min,
+            "cycles": cycles,
+            "cycle_idx": 1,
+            "phase": "focus",
+            "phase_ends_at": now + timedelta(minutes=focus_min),
             "started_at": now,
-            "ends_at": ends,
             "state": "active",
-            "reminder_id": reminder_id,
         }
     )
     _robot("start")
-    return {"ok": True, "minutes": minutes, "label": label}
+    return {
+        "ok": True, "focus_min": focus_min, "break_min": break_min,
+        "cycles": cycles, "label": label, "scene": scene,
+        "scene_online": bool(scene_result and scene_result.get("online")),
+    }
+
+
+def _aware(dt):
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 
 def stop_focus(completed: bool = True) -> Dict[str, Any]:
-    """ينهي الجلسة. completed=True بتنحسب إنجاز (احتفال)، False = إلغاء."""
+    """ينهي الجلسة. completed=True إنجاز (احتفال)، False = إلغاء.
+    لو الجلسة مربوط فيها end_scene بيتطبّق عند الإنجاز."""
     _require_owner()
     s = active_focus()
     if not s:
         return {"ok": False, "error": "no_session"}
 
     now = datetime.now(timezone.utc)
-    started = s["started_at"]
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=timezone.utc)
+    started = _aware(s["started_at"])
     elapsed_min = max(0, int((now - started).total_seconds() / 60))
 
     _mongo_db[_COLL].update_one(
         {"_id": s["_id"]},
         {"$set": {"state": "done" if completed else "cancelled", "ended_at": now}},
     )
-    # التذكير ما عاد لازم لو وقفنا بدري
-    rid = s.get("reminder_id", "")
-    if rid:
+    if completed and s.get("end_scene"):
         try:
-            from app.features.reminders_store import delete_reminder
-
-            delete_reminder(rid)
+            from app.features.scene_store import apply_scene
+            apply_scene(s["end_scene"])
         except Exception:
             pass
 
@@ -130,10 +143,68 @@ def stop_focus(completed: bool = True) -> Dict[str, Any]:
     return {
         "ok": True,
         "minutes": elapsed_min,
-        "planned": s.get("minutes", 0),
+        "planned": s.get("focus_min", s.get("minutes", 0)),
         "label": s.get("label", ""),
         "completed": completed,
     }
+
+
+def advance_focus_phase() -> Optional[Dict[str, Any]]:
+    """تنقل جلسة البومودورو لطورها التالي لو خلص وقت الطور الحالي.
+
+    بترجع حدث {event: focus|break|done, ...} للجدولة تبعت إشعاره، أو None لو ما
+    في شي مستحق. عند الرجوع للتركيز بتعيد تطبيق المشهد (لأن الراحة أو مؤقت
+    داخل المشهد ممكن يكون غيّر الغرفة).
+    """
+    if _mongo_db is None:
+        return None
+    s = active_focus()
+    if not s or s.get("state") != "active":
+        return None
+    pe = _aware(s.get("phase_ends_at"))
+    now = datetime.now(timezone.utc)
+    if pe is None or now < pe:
+        return None
+
+    phase = s.get("phase", "focus")
+    cycle_idx = int(s.get("cycle_idx", 1))
+    cycles = int(s.get("cycles", 1))
+    focus_min = int(s.get("focus_min", 25))
+    break_min = int(s.get("break_min", 0))
+    label = s.get("label", "")
+
+    # خلص آخر طور تركيز → إنهاء الجلسة كلها
+    if phase == "focus" and cycle_idx >= cycles:
+        r = stop_focus(completed=True)
+        return {"event": "done", "label": label, "cycles": cycles,
+                "minutes": r.get("minutes", 0)}
+
+    # خلص تركيز وفي راحة → ادخل طور الراحة
+    if phase == "focus" and break_min > 0:
+        _mongo_db[_COLL].update_one(
+            {"_id": s["_id"]},
+            {"$set": {"phase": "break", "phase_ends_at": now + timedelta(minutes=break_min)}},
+        )
+        _robot("idle")
+        return {"event": "break", "break_min": break_min,
+                "cycle_idx": cycle_idx, "cycles": cycles, "label": label}
+
+    # خلصت راحة (أو تركيز بدون راحة) → دورة تركيز جديدة
+    cycle_idx += 1
+    _mongo_db[_COLL].update_one(
+        {"_id": s["_id"]},
+        {"$set": {"phase": "focus", "cycle_idx": cycle_idx,
+                  "phase_ends_at": now + timedelta(minutes=focus_min)}},
+    )
+    if s.get("scene"):
+        try:
+            from app.features.scene_store import apply_scene
+            apply_scene(s["scene"])
+        except Exception:
+            pass
+    _robot("start")
+    return {"event": "focus", "cycle_idx": cycle_idx, "cycles": cycles,
+            "focus_min": focus_min, "label": label}
 
 
 def focus_status() -> Dict[str, Any]:
@@ -141,13 +212,16 @@ def focus_status() -> Dict[str, Any]:
     s = active_focus()
     if not s:
         return {"active": False}
-    ends = s["ends_at"]
-    if ends.tzinfo is None:
-        ends = ends.replace(tzinfo=timezone.utc)
-    remaining = max(0, int((ends - datetime.now(timezone.utc)).total_seconds() / 60))
+    pe = _aware(s.get("phase_ends_at"))
+    remaining = max(0, int((pe - datetime.now(timezone.utc)).total_seconds() / 60)) if pe else 0
     return {
         "active": True,
         "label": s.get("label", ""),
-        "minutes": s.get("minutes", 0),
+        "scene": s.get("scene", ""),
+        "phase": s.get("phase", "focus"),
+        "cycle_idx": int(s.get("cycle_idx", 1)),
+        "cycles": int(s.get("cycles", 1)),
+        "focus_min": int(s.get("focus_min", s.get("minutes", 0))),
+        "break_min": int(s.get("break_min", 0)),
         "remaining_min": remaining,
     }
