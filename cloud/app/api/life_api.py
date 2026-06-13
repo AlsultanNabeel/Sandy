@@ -21,9 +21,9 @@ _OWNER_PROFILE = {
 
 _DEMO = {
     "shopping": [
-        {"id": "d1", "text": "حليب", "done": False},
-        {"id": "d2", "text": "خبز", "done": False},
-        {"id": "d3", "text": "قهوة", "done": True},
+        {"id": "d1", "text": "حليب", "done": False, "category": "بقالة", "price": 8, "qty": 2, "unit": "علبة"},
+        {"id": "d2", "text": "تفاح", "done": False, "category": "خضار وفواكه", "price": 0, "qty": 1, "unit": ""},
+        {"id": "d3", "text": "قهوة", "done": True, "category": "بقالة", "price": 25, "qty": 1, "unit": ""},
     ],
     "habits": [
         {"id": "d1", "name": "رياضة الصبح", "streak": 5, "done_today": True},
@@ -72,20 +72,21 @@ def register_life_api(app, mongo_db=None):
         text = (body.get("text") or "").strip()
         if not text:
             return jsonify({"error": "text_required"}), 400
-        from app.features.shopping_store import add_items
+        from app.features.shopping_store import add_item
 
         with active_user_profile_context(_OWNER_PROFILE):
-            n = add_items([text])
-        return jsonify({"ok": n > 0}), 200
+            ok = add_item(text, category=(body.get("category") or "").strip())
+        return jsonify({"ok": ok}), 200
 
     @app.route("/api/life/shopping/<item_id>", methods=["PATCH"])
     @require_owner
     def api_shopping_check(item_id, claims):
+        body = request.get_json(silent=True) or {}
         from app.features.shopping_store import check_item_by_id
 
         with active_user_profile_context(_OWNER_PROFILE):
-            ok = check_item_by_id(item_id)
-        return jsonify({"ok": ok}), (200 if ok else 404)
+            r = check_item_by_id(item_id, price=body.get("price"), qty=body.get("qty"))
+        return jsonify(r), (200 if r.get("ok") else 404)
 
     @app.route("/api/life/shopping/<item_id>", methods=["DELETE"])
     @require_owner
@@ -95,6 +96,31 @@ def register_life_api(app, mongo_db=None):
         with active_user_profile_context(_OWNER_PROFILE):
             ok = delete_item_by_id(item_id)
         return jsonify({"ok": ok}), (200 if ok else 404)
+
+    @app.route("/api/life/shopping/<item_id>/price", methods=["POST"])
+    @require_owner
+    def api_shopping_set_price(item_id, claims):
+        body = request.get_json(silent=True) or {}
+        from app.features.shopping_store import set_item_purchase
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            ok = set_item_purchase(
+                item_id,
+                price=body.get("price"),
+                qty=body.get("qty"),
+                unit=body.get("unit"),
+            )
+        return jsonify({"ok": ok}), (200 if ok else 404)
+
+    @app.route("/api/life/shopping/last-price", methods=["GET"])
+    @require_owner
+    def api_shopping_last_price(claims):
+        text = (request.args.get("text") or "").strip()
+        from app.features.shopping_store import last_price_for
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            price = last_price_for(text)
+        return jsonify({"price": price}), 200
 
     # ── العادات ─────────────────────────────────────────────────────────
     @app.route("/api/life/habits", methods=["GET"])
