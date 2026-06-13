@@ -17,6 +17,11 @@ static const note_t CURIOUS[] = {{523,80},{587,80},{659,80},{698,120}};
 static const note_t SAD[]     = {{494,200},{440,200},{392,300}};
 static const note_t ALERT[]   = {{880,100},{0,50},{880,100},{0,50},{880,150}};
 static const note_t ERR[]     = {{330,200},{0,50},{294,200},{0,50},{262,300}};
+// Focus cues: START rises (motivating), BREAK is a soft two-note pause,
+// END is a warm descending "done".
+static const note_t FOC_START[] = {{523,90},{659,90},{784,90},{988,220}};
+static const note_t FOC_BREAK[] = {{784,120},{0,60},{587,160}};
+static const note_t FOC_END[]   = {{988,120},{784,120},{659,120},{523,260}};
 
 typedef struct { const note_t *notes; size_t count; } melody_def_t;
 static const melody_def_t s_defs[MELODY_COUNT] = {
@@ -27,6 +32,9 @@ static const melody_def_t s_defs[MELODY_COUNT] = {
     [MELODY_SAD]     = {SAD,     3},
     [MELODY_ALERT]   = {ALERT,   5},
     [MELODY_ERROR]   = {ERR,     5},
+    [MELODY_FOCUS_START] = {FOC_START, 4},
+    [MELODY_FOCUS_BREAK] = {FOC_BREAK, 3},
+    [MELODY_FOCUS_END]   = {FOC_END,   4},
 };
 
 static QueueHandle_t s_q;

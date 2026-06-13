@@ -63,6 +63,9 @@ static void _handle_buzzer(const char *val) {
     else if (!strcmp(val, "sad"))     buzzer_play(MELODY_SAD);
     else if (!strcmp(val, "alert"))   buzzer_play(MELODY_ALERT);
     else if (!strcmp(val, "error"))   buzzer_play(MELODY_ERROR);
+    else if (!strcmp(val, "focus_start")) buzzer_play(MELODY_FOCUS_START);
+    else if (!strcmp(val, "focus_break")) buzzer_play(MELODY_FOCUS_BREAK);
+    else if (!strcmp(val, "focus_end"))   buzzer_play(MELODY_FOCUS_END);
     else ESP_LOGW(TAG, "unknown melody: %s", val);
 }
 

@@ -384,6 +384,24 @@ def focus_check(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
     }
 
 
+def focus_sound(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
+    from app.features.focus_store import get_focus_sounds, set_focus_sound
+
+    event = str(args.get("event", "")).strip().lower()
+    melody = str(args.get("melody", "")).strip().lower()
+    if not event or not melody:
+        s = get_focus_sounds()
+        return {"handled": True,
+                "reply": f"🔔 أصوات التركيز — بداية: {s['start']} · راحة: {s['break']} · نهاية: {s['end']}"}
+    r = set_focus_sound(event, melody)
+    if r.get("ok"):
+        word = {"start": "بداية التركيز", "break": "الراحة", "end": "نهاية التركيز"}.get(r["event"], r["event"])
+        return {"handled": True, "reply": f"🔔 غيّرت صوت {word} لـ «{r['melody']}»."}
+    if r.get("error") == "bad_melody":
+        return {"handled": True, "reply": "النغمة مش موجودة. المتاح: " + "، ".join(r.get("choices", []))}
+    return {"handled": True, "reply": "حدّد بداية/راحة/نهاية ونغمة صحيحة."}
+
+
 # ── مشاهد الغرفة ──────────────────────────────────────────────────────────────
 
 def scene_apply(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
@@ -689,6 +707,19 @@ LIFE_TOOLS = [
         "description": "حالة جلسة التركيز — «قديش ضايل؟»",
         "parameters": {"type": "object", "properties": {}, "required": []},
         "handler": focus_check,
+    },
+    {
+        "name": "focus_sound",
+        "description": "غيّر أو اعرض صوت بازر التركيز على الروبوت — «خلي صوت بداية التركيز happy» أو «شو أصوات التركيز؟». الأحداث: start|break|end",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "event": {"type": "string", "description": "أي صوت: start (بداية) | break (راحة) | end (نهاية)"},
+                "melody": {"type": "string", "description": "النغمة: focus_start|focus_break|focus_end|happy|curious|boot|alert|sad|error"},
+            },
+            "required": [],
+        },
+        "handler": focus_sound,
     },
     {
         "name": "scene_apply",

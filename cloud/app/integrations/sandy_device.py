@@ -74,7 +74,11 @@ _REACTION_TO_MOOD = {
 }
 
 # Must match _handle_buzzer in firmware/brain-core/main/sandy_mqtt.c.
-_VALID_BUZZER = {"boot", "happy", "curious", "sad", "alert", "error"}
+_VALID_BUZZER = {
+    "boot", "happy", "curious", "sad", "alert", "error",
+    "focus_start", "focus_break", "focus_end",
+}
+VALID_BUZZER = frozenset(_VALID_BUZZER)   # public: callers pick a melody from this
 _VALID_BASE   = {"forward", "backward", "left", "right", "stop"}
 
 

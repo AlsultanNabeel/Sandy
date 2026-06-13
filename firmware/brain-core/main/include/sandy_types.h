@@ -39,6 +39,9 @@ typedef enum {
     MELODY_SAD,
     MELODY_ALERT,
     MELODY_ERROR,
+    MELODY_FOCUS_START,
+    MELODY_FOCUS_BREAK,
+    MELODY_FOCUS_END,
     MELODY_COUNT
 } sandy_melody_t;
 

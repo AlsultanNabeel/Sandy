@@ -19,7 +19,14 @@ from typing import Any, Dict, Optional
 from app.utils.user_profiles import active_profile_allows_privileged_access
 
 _COLL = "sandy_focus"
+_META = "sandy_focus_meta"   # {_id: "sounds", start, break, end}  أصوات قابلة للتغيير
 _mongo_db = None
+
+# الأصوات الافتراضية لكل حدث (نغمات الفيرموير المخصّصة للتركيز).
+_DEFAULT_SOUNDS = {"start": "focus_start", "break": "focus_break", "end": "focus_end"}
+# الوجه (mood) المصاحب لكل حدث.
+_EVENT_MOOD = {"start": "focused", "resume": "focused", "break": "calm",
+               "done": "happy", "cancel": "idle"}
 
 
 def init_focus_store(mongo_db) -> None:
@@ -34,21 +41,49 @@ def _require_owner() -> None:
         raise PermissionError("هذا خاص بنبيل 😊")
 
 
-def _robot(action: str) -> None:
-    """إشارة للروبوت — فشلها ما بيوقف الجلسة أبداً."""
+def get_focus_sounds() -> Dict[str, str]:
+    """صوت البازر المضبوط لكل حدث (start/break/end) فوق الافتراضي."""
+    out = dict(_DEFAULT_SOUNDS)
+    if _mongo_db is not None:
+        doc = _mongo_db[_META].find_one({"_id": "sounds"}) or {}
+        for k in out:
+            if doc.get(k):
+                out[k] = doc[k]
+    return out
+
+
+def set_focus_sound(event: str, melody: str) -> Dict[str, Any]:
+    """غيّر صوت حدث (start|break|end) لأي نغمة بقاموس الروبوت."""
+    _require_owner()
+    from app.integrations.sandy_device import VALID_BUZZER
+
+    event = (event or "").strip().lower()
+    melody = (melody or "").strip().lower()
+    if event not in _DEFAULT_SOUNDS:
+        return {"ok": False, "error": "bad_event"}
+    if melody not in VALID_BUZZER:
+        return {"ok": False, "error": "bad_melody", "choices": sorted(VALID_BUZZER)}
+    if _mongo_db is None:
+        return {"ok": False}
+    _mongo_db[_META].update_one({"_id": "sounds"}, {"$set": {event: melody}}, upsert=True)
+    return {"ok": True, "event": event, "melody": melody}
+
+
+def _signal(event: str) -> None:
+    """إشارة للروبوت (وجه + بازر) حسب الحدث — تشتغل سواء الأمر فوري أو من الجدولة.
+    فشلها ما بيوقف الجلسة أبداً."""
     try:
         from app.integrations.sandy_device import get_sandy_device_client
 
         device = get_sandy_device_client()
         if not device or not device.available:
             return
-        if action == "start":
-            device.set_mood("focused")
-        elif action == "celebrate":
-            device.set_mood("happy")
-            device.play_buzzer("happy")
-        elif action == "idle":
-            device.set_mood("idle")
+        device.set_mood(_EVENT_MOOD.get(event, "idle"))
+        sounds = get_focus_sounds()
+        buzz = {"start": sounds["start"], "resume": sounds["start"],
+                "break": sounds["break"], "done": sounds["end"]}.get(event)
+        if buzz:
+            device.play_buzzer(buzz)
     except Exception:
         pass
 
@@ -102,7 +137,7 @@ def start_focus(focus_min: int = 25, label: str = "", break_min: int = 0,
             "state": "active",
         }
     )
-    _robot("start")
+    _signal("start")
     return {
         "ok": True, "focus_min": focus_min, "break_min": break_min,
         "cycles": cycles, "label": label, "scene": scene,
@@ -139,7 +174,7 @@ def stop_focus(completed: bool = True) -> Dict[str, Any]:
         except Exception:
             pass
 
-    _robot("celebrate" if completed else "idle")
+    _signal("done" if completed else "cancel")
     return {
         "ok": True,
         "minutes": elapsed_min,
@@ -185,7 +220,7 @@ def advance_focus_phase() -> Optional[Dict[str, Any]]:
             {"_id": s["_id"]},
             {"$set": {"phase": "break", "phase_ends_at": now + timedelta(minutes=break_min)}},
         )
-        _robot("idle")
+        _signal("break")
         return {"event": "break", "break_min": break_min,
                 "cycle_idx": cycle_idx, "cycles": cycles, "label": label}
 
@@ -202,7 +237,7 @@ def advance_focus_phase() -> Optional[Dict[str, Any]]:
             apply_scene(s["scene"])
         except Exception:
             pass
-    _robot("start")
+    _signal("resume")
     return {"event": "focus", "cycle_idx": cycle_idx, "cycles": cycles,
             "focus_min": focus_min, "label": label}
 

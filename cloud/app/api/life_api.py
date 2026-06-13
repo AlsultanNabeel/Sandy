@@ -420,3 +420,21 @@ def register_life_api(app, mongo_db=None):
         with active_user_profile_context(_OWNER_PROFILE):
             r = stop_focus(completed=not bool(body.get("cancel")))
         return jsonify(r), (200 if r.get("ok") else 404)
+
+    @app.route("/api/life/focus/sounds", methods=["GET"])
+    @require_owner
+    def api_focus_sounds(claims):
+        from app.features.focus_store import get_focus_sounds
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            return jsonify(get_focus_sounds()), 200
+
+    @app.route("/api/life/focus/sounds", methods=["POST"])
+    @require_owner
+    def api_focus_sound_set(claims):
+        body = request.get_json(silent=True) or {}
+        from app.features.focus_store import set_focus_sound
+
+        with active_user_profile_context(_OWNER_PROFILE):
+            r = set_focus_sound((body.get("event") or "").strip(), (body.get("melody") or "").strip())
+        return jsonify(r), (200 if r.get("ok") else 400)
