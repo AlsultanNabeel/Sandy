@@ -177,9 +177,13 @@ def book_add(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
         total_pages=int(args.get("total_pages", 0) or 0),
         cover_url=str(args.get("cover_url", "")),
         current_page=int(args.get("current_page", 0) or 0),
+        author=str(args.get("author", "")),
+        category=str(args.get("category", "")),
+        fmt=str(args.get("fmt", "")),
     )
     if r.get("ok"):
-        return {"handled": True, "reply": f"📚 سجلت كتاب «{r['title']}»."}
+        by = f" لـ{args.get('author')}" if args.get("author") else ""
+        return {"handled": True, "reply": f"📚 سجلت كتاب «{r['title']}»{by}."}
     if r.get("error") == "exists":
         return {"handled": True, "reply": "هالكتاب مسجل أصلاً 📚"}
     return {"handled": True, "reply": "شو اسم الكتاب؟"}
@@ -200,7 +204,9 @@ def book_list(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
             prog = f" — صفحة {b['current_page']} من {b['total_pages']}"
         elif b["current_page"]:
             prog = f" — صفحة {b['current_page']}"
-        lines.append(f"{label.get(b['status'], '📚')} {b['title']}{prog}")
+        by = f" · {b['author']}" if b.get("author") else ""
+        stars = " " + "⭐" * b["rating"] if b.get("rating") else ""
+        lines.append(f"{label.get(b['status'], '📚')} {b['title']}{by}{prog}{stars}")
     return {"handled": True, "reply": "📚 كتبك:\n" + "\n".join(lines)}
 
 
@@ -213,6 +219,70 @@ def book_status(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
         word = {"done": "مكتمل 🎉", "reading": "قيد القراءة 📖", "wishlist": "عالقائمة 🔖"}.get(s, s)
         return {"handled": True, "reply": f"«{r['title']}» صار {word}"}
     return {"handled": True, "reply": "ما لقيت الكتاب أو الحالة غير صالحة."}
+
+
+def book_meta(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
+    from app.features.reading_store import set_book_meta
+
+    def _opt(k, cast=str):
+        v = args.get(k)
+        return cast(v) if v is not None and str(v) != "" else None
+
+    r = set_book_meta(
+        str(args.get("title", "")),
+        author=_opt("author"),
+        category=_opt("category"),
+        rating=_opt("rating", int),
+        fmt=_opt("fmt"),
+        total_pages=_opt("total_pages", int),
+        current_page=_opt("current_page", int),
+    )
+    if not r.get("ok"):
+        return {"handled": True, "reply": "ما لقيت الكتاب أو ما في إشي أعدّله."}
+    return {"handled": True, "reply": f"✏️ حدّثت «{r['title']}»."}
+
+
+def book_note(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
+    from app.features.reading_store import add_note
+
+    r = add_note(str(args.get("title", "")), str(args.get("text", "")))
+    if not r.get("ok"):
+        return {"handled": True, "reply": "ما لقيت الكتاب أو الملاحظة فاضية."}
+    return {"handled": True, "reply": f"📝 ضفت ملاحظة على «{r['title']}»."}
+
+
+def book_quote(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
+    from app.features.reading_store import add_quote
+
+    r = add_quote(str(args.get("title", "")), str(args.get("text", "")), page=int(args.get("page", 0) or 0))
+    if not r.get("ok"):
+        return {"handled": True, "reply": "ما لقيت الكتاب أو الاقتباس فاضي."}
+    return {"handled": True, "reply": f"❝ حفظت اقتباس من «{r['title']}»."}
+
+
+def reading_goal(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
+    from app.features.reading_store import goal_progress, set_reading_goal
+
+    if args.get("books_year") is not None or args.get("pages_year") is not None:
+        r = set_reading_goal(
+            books_year=int(args.get("books_year", 0) or 0),
+            pages_year=int(args.get("pages_year", 0) or 0),
+        )
+        parts = []
+        if r["books_year"]:
+            parts.append(f"{r['books_year']} كتاب")
+        if r["pages_year"]:
+            parts.append(f"{r['pages_year']} صفحة")
+        return {"handled": True, "reply": "🎯 ظبّطت هدف السنة: " + " و".join(parts) + "."}
+    p = goal_progress()
+    if not p["books_year"] and not p["pages_year"]:
+        return {"handled": True, "reply": "ما في هدف قراءة محدد — قول مثلاً «هدفي ٢٤ كتاب بالسنة»."}
+    bits = []
+    if p["books_year"]:
+        bits.append(f"📚 {p['books_done']}/{p['books_year']} كتاب")
+    if p["pages_year"]:
+        bits.append(f"📄 {p['pages_read']}/{p['pages_year']} صفحة")
+    return {"handled": True, "reply": "🎯 هدف السنة: " + " · ".join(bits)}
 
 
 def reading_start(args: Dict[str, Any], ctx: "DispatchContext") -> Dict[str, Any]:
@@ -459,11 +529,14 @@ LIFE_TOOLS = [
     },
     {
         "name": "book_add",
-        "description": "سجل كتاب — «ضيفي كتاب العادات الذرية 300 صفحة». status: reading|done|wishlist",
+        "description": "سجل كتاب — «ضيفي كتاب العادات الذرية لجيمس كلير 300 صفحة». status: reading|done|wishlist",
         "parameters": {
             "type": "object",
             "properties": {
                 "title": {"type": "string", "description": "اسم الكتاب"},
+                "author": {"type": "string", "description": "الكاتب (اختياري)"},
+                "category": {"type": "string", "description": "التصنيف/النوع — تطوير ذات، رواية، تاريخ... (اختياري)"},
+                "fmt": {"type": "string", "description": "الصيغة: paper | ebook | audio (اختياري)"},
                 "status": {"type": "string", "description": "reading (افتراضي) | done | wishlist (ناوي يقراه)"},
                 "total_pages": {"type": "number", "description": "عدد الصفحات الكلي (اختياري)"},
                 "current_page": {"type": "number", "description": "الصفحة الحالية لو بلش فيه (اختياري)"},
@@ -472,6 +545,64 @@ LIFE_TOOLS = [
             "required": ["title"],
         },
         "handler": book_add,
+    },
+    {
+        "name": "book_meta",
+        "description": "حدّث بيانات كتاب: تقييم نجوم/كاتب/تصنيف/صيغة/صفحات — «قيّمي الخيميائي ٥ نجوم» أو «كاتب العادات الذرية جيمس كلير»",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "اسم الكتاب"},
+                "rating": {"type": "number", "description": "تقييم 0..5 نجوم"},
+                "author": {"type": "string", "description": "الكاتب"},
+                "category": {"type": "string", "description": "التصنيف/النوع"},
+                "fmt": {"type": "string", "description": "paper | ebook | audio"},
+                "total_pages": {"type": "number", "description": "عدد الصفحات الكلي"},
+                "current_page": {"type": "number", "description": "الصفحة الحالية"},
+            },
+            "required": ["title"],
+        },
+        "handler": book_meta,
+    },
+    {
+        "name": "book_note",
+        "description": "ضيف ملاحظة على كتاب — «دوني ملاحظة على العادات الذرية: ...»",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "اسم الكتاب"},
+                "text": {"type": "string", "description": "نص الملاحظة"},
+            },
+            "required": ["title", "text"],
+        },
+        "handler": book_note,
+    },
+    {
+        "name": "book_quote",
+        "description": "احفظ اقتباس من كتاب — «اقتباس من الخيميائي صفحة ٤٢: ...»",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "اسم الكتاب"},
+                "text": {"type": "string", "description": "نص الاقتباس"},
+                "page": {"type": "number", "description": "رقم الصفحة (اختياري)"},
+            },
+            "required": ["title", "text"],
+        },
+        "handler": book_quote,
+    },
+    {
+        "name": "reading_goal",
+        "description": "هدف القراءة السنوي أو متابعته — «هدفي ٢٤ كتاب بالسنة» أو «وين وصلت بهدف القراءة؟»",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "books_year": {"type": "number", "description": "عدد الكتب المستهدفة بالسنة (لتعيين الهدف)"},
+                "pages_year": {"type": "number", "description": "عدد الصفحات المستهدفة بالسنة (اختياري)"},
+            },
+            "required": [],
+        },
+        "handler": reading_goal,
     },
     {
         "name": "book_list",
